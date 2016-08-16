@@ -1,0 +1,63 @@
+---
+title: "algae_herbivores"
+author: "Owen Liu"
+date: "August 16, 2016"
+output: html_document
+---
+
+# Brown Algae and Herbivores at San Nicolas Island
+## An Empirical Dynamic Exploration
+
+This project will use data from a long-term monitoring project at San Nicolas Island to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive and predatory/herbivorous interactions in real time across the timeframe of the dataset.  The species we will look at are:
+
+* Brown algaes:
+  +*Macrocystis pyrifera*, giant kelp
+  +*Laminaria* species (combined)
+  +*Cystoseira osmundacea*
+  +*Pterogophora californica*
+  +*Eisenia arborea*, southern sea palm
+
+* Echinoderms
+  +*Strongylocentrotus purpuratus*, purple sea urchin
+  +*S. franciscanus*, red sea urchin
+  +*Patiria miniata*, bat star
+  +*Pisaster giganteus*, giant sea star
+  +*Parastichopus parvimensis*, warty sea cucumber
+
+* Gastropods
+  +*Megastraea undosa*, wavy turban snail
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tseries)
+library(rEDM)
+library(reshape2)
+
+#### Data ####
+# The raw data has been processed into a set of normalized time series elsewhere.
+W_D <- getwd()
+dat.long <- read.csv(paste0(W_D,"/data/combined_processed_benthic_data.csv"))
+
+# These data have more species than we need. These next lines pull out the relevant species for this study from the larger dataset and produce a block (wide-form) dataset.  Keep in mind, these data are from multiple transects across multiple sites on the small islands. Empirical dynamic modeling can use multiple spatial replicates to produce increased predictability by concatenating them into one long time series. We preserve a time indicator (variable 'period') to ensure that we do not "cross" the boundaries of replicate time series in following analyses.
+
+# First, filter for our species of interest.
+# Species Key
+#*************************************
+spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
+spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
+
+# better names
+spp.key.bdens$name <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
+# ************************************
+
+norm.ts.benth <- dat.norm %>%
+  select(-dens) %>%
+  spread(key=spp,value=norm)
+
+```
+
+### Getting a Sense of the Data
+
+Our first task is just to look at the data over time.
