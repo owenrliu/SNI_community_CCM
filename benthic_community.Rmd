@@ -17,139 +17,159 @@ library(reshape2)
 #note: all raw data has a .dat
 W_D <- getwd()
 
-# benthic species density
-#**************************************
-benthdens.dat <- read.csv(file=paste(W_D,'/data/Benthic density raw data.csv',sep=''))
-#fix dates in the datasets to be more readable by R
-betterDates <-function(dat) {
-  dates<-as.Date(as.character(dat$Date),format="%m/%d/%y")
-  return(dates)
-}
-benthdens.dat$Date <- betterDates(benthdens.dat)
-#**************************************
-
-# benthic cover data
-#**************************************
-benthcover.dat <- read.csv(paste0(W_D,"/data/Benthic cover summary data.csv"))
-benthcover.dat$Date <- betterDates(benthcover.dat)
-
-#*************************************
-# Species Key
-#*************************************
-spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
-spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
-spp.key.bcov <- spp.key %>% filter(DataSet=="Benthic cover")
-
-# better names
-spp.key.bdens$name <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
-
-# quick function to turn a "genus species" into an abbreviated gen.spe identifier
-abbr.species.names <- function(x) {
-  temp <- strsplit(x," ")[[1]]
-  g <- substr(temp[1],1,3)
-  spe <- substr(temp[2],1,3)
-  paste(g,spe,sep=".")
-}
-
-spp.key.bcov$name <- sapply(spp.key.bcov$SpeciesName,abbr.species.names)
-#**************************************
-
-
-# ***********************************
-# Replace species code with species name and rename some variables
-benthdensdat <- benthdens.dat %>%
-  rename(station=Station,period=Period,date=Date,swath=Swath,dens=Density) %>%
-  left_join(select(spp.key.bdens,SpeciesCode,name),by="SpeciesCode") %>%
-  
-  # remove unneeded columns
-  select(-SpeciesCode,-date) %>%
-  rename(spp=name) %>%
-  arrange(spp,period,swath) %>%
-  
-  # join station and swath columns into one unique 'site' identifier
-  unite(site,station,swath)
-
-# Same for benthic cover, which has slightly different original data structure
-benthcovdat <- benthcover.dat %>%
-  rename(site=Station,period=Period,date=Date,dens=CoverMean) %>%
-  left_join(select(spp.key.bcov,SpeciesCode,name),by="SpeciesCode") %>%
-  
-  # remove unneeded columns
-  select(-SpeciesCode,-date,-Replicates,-CoverSE) %>%
-  rename(spp=name) %>%
-  arrange(spp,period)
-
-#*************************************
-# There's one more problem, which is that there are some periods which were not sampled. It's better to make those values NAs in the data than just skipping over time periods.  This set of code expands the timeseries for each site/species to include NA density values for missing survey times.
-
-periods.all <- data_frame(period=1:63)
-
-# "Filling in" benthic data
-sites <- sort(unique(benthdensdat$site))
-spps <- sort(unique(benthdensdat$spp))
-benthdensdat.full <- data_frame()
-for(i in 1:length(sites)) {
-  for(j in 1:length(spps)) {
-    temp <- benthdensdat %>% filter(site==sites[i],spp==spps[j])
-    temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
-    benthdensdat.full <- bind_rows(benthdensdat.full,temp)
-  }
-}
-
-# Filling in cover data
-sites <- sort(unique(benthcovdat$site))
-spps <- sort(unique(benthcovdat$spp))
-benthcovdat.full <- data_frame()
-for(i in 1:length(sites)) {
-  for(j in 1:length(spps)) {
-    temp <- benthcovdat %>% filter(site==sites[i],spp==spps[j])
-    temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
-    benthcovdat.full <- bind_rows(benthcovdat.full,temp)
-  }
-}
-rm(temp)
-
-#******************************
-# As a last data setup step, we combine the two datasets into one, "longform" data
-benthcovdat.full$site <- as.character(benthcovdat.full$site)
-fulldat <- bind_rows(benthcovdat.full,benthdensdat.full)
-
-write.csv(fulldat,file=paste0(W_D,"/data/combined_processed_benthic_data.csv"))
-
 ```
 
+### Raw Data Processing
+First, we set up the original data to create comparable, normalized time series, and cut down the data to the 25 species with the most available data (nonzeroes).
+
+```{r process raw data}
+# This function takes the raw benthic density and benthic cover data, edits the species names, fills in missing values to create complete timeseries, and joins the datasets into long form. Obviously requires the data to be in the correct folders relative to the working directory.
+
+process_raw_data <- function() {
+  # benthic species density
+  #**************************************
+  benthdens.dat <- read.csv(file=paste(W_D,'/data/Benthic density raw data.csv',sep=''))
+  #fix dates in the datasets to be more readable by R
+  betterDates <-function(dat) {
+    dates<-as.Date(as.character(dat$Date),format="%m/%d/%y")
+    return(dates)
+  }
+  benthdens.dat$Date <- betterDates(benthdens.dat)
+  #**************************************
+  
+  # benthic cover data
+  #**************************************
+  benthcover.dat <- read.csv(paste0(W_D,"/data/Benthic cover summary data.csv"))
+  benthcover.dat$Date <- betterDates(benthcover.dat)
+  
+  #*************************************
+  # Species Key
+  #*************************************
+  spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
+  spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
+  spp.key.bcov <- spp.key %>% filter(DataSet=="Benthic cover")
+  
+  # better names
+  spp.key.bdens$name <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
+  
+  # quick function to turn a "genus species" into an abbreviated gen.spe identifier
+  abbr.species.names <- function(x) {
+    temp <- strsplit(x," ")[[1]]
+    g <- substr(temp[1],1,3)
+    spe <- substr(temp[2],1,3)
+    paste(g,spe,sep=".")
+  }
+  
+  spp.key.bcov$name <- sapply(spp.key.bcov$SpeciesName,abbr.species.names)
+  #**************************************
+  
+  
+  # ***********************************
+  # Replace species code with species name and rename some variables
+  benthdensdat <- benthdens.dat %>%
+    rename(station=Station,period=Period,date=Date,swath=Swath,dens=Density) %>%
+    left_join(select(spp.key.bdens,SpeciesCode,name),by="SpeciesCode") %>%
+    
+    # remove unneeded columns
+    select(-SpeciesCode,-date) %>%
+    rename(spp=name) %>%
+    arrange(spp,period,swath) %>%
+    
+    # join station and swath columns into one unique 'site' identifier
+    unite(site,station,swath)
+  
+  # Same for benthic cover, which has slightly different original data structure
+  benthcovdat <- benthcover.dat %>%
+    rename(site=Station,period=Period,date=Date,dens=CoverMean) %>%
+    left_join(select(spp.key.bcov,SpeciesCode,name),by="SpeciesCode") %>%
+    
+    # remove unneeded columns
+    select(-SpeciesCode,-date,-Replicates,-CoverSE) %>%
+    rename(spp=name) %>%
+    arrange(spp,period)
+  
+  #*************************************
+  # There's one more problem, which is that there are some periods which were not sampled. It's better to make those values NAs in the data than just skipping over time periods.  This set of code expands the timeseries for each site/species to include NA density values for missing survey times.
+  
+  periods.all <- data_frame(period=1:63)
+  
+  # "Filling in" benthic data
+  sites <- sort(unique(benthdensdat$site))
+  spps <- sort(unique(benthdensdat$spp))
+  benthdensdat.full <- data_frame()
+  for(i in 1:length(sites)) {
+    for(j in 1:length(spps)) {
+      temp <- benthdensdat %>% filter(site==sites[i],spp==spps[j])
+      temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
+      benthdensdat.full <- bind_rows(benthdensdat.full,temp)
+    }
+  }
+  
+  # Filling in cover data
+  sites <- sort(unique(benthcovdat$site))
+  spps <- sort(unique(benthcovdat$spp))
+  benthcovdat.full <- data_frame()
+  for(i in 1:length(sites)) {
+    for(j in 1:length(spps)) {
+      temp <- benthcovdat %>% filter(site==sites[i],spp==spps[j])
+      temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
+      benthcovdat.full <- bind_rows(benthcovdat.full,temp)
+    }
+  }
+  rm(temp)
+  
+  #******************************
+  # As a last data setup step, we combine the two datasets into one, "longform" data
+  benthcovdat.full$site <- as.character(benthcovdat.full$site)
+  fulldat <- bind_rows(benthcovdat.full,benthdensdat.full)
+  
+  write.csv(fulldat,file=paste0(W_D,"/data/combined_processed_benthic_data.csv"))
+  return(fulldat)
+}
+```
+  
 To make sure our data is usable, we want to only use those species that don't have too many zeroes (i.e., they actually have dynamics).  We'll cut down the dataset, and also take this chance to normalize timeseries (mean 0, variance 1).
-
+  
 ```{r usable species}
-# What proportion of zeroes in the data for each species/site?
+# These functions cut the data to 25 species and normalizes the time series to mean 0, variance 1. Requires the dataframe output from the previous function.
+find_usable_spp <- function(fulldat) {
+  # What proportion of zeroes in the data for each species/site?
 # **********************************
-numzeroes <- fulldat %>% group_by(spp) %>% filter(dens==0 | is.na(dens)) %>% summarise(zeroes=n())
-propzeroes <- fulldat %>% group_by(spp) %>% 
-  filter(dens != 0, !is.na(dens)) %>% 
-  summarise(nonzeroes=n()) %>%
-  left_join(numzeroes, by="spp") %>%
-  mutate(propzeroes=(zeroes/(nonzeroes+zeroes))) %>%
-  arrange(propzeroes)
+  numzeroes <- fulldat %>% group_by(spp) %>% filter(dens==0 | is.na(dens)) %>% summarise(zeroes=n())
+  propzeroes <- fulldat %>% group_by(spp) %>% 
+    filter(dens != 0, !is.na(dens)) %>% 
+    summarise(nonzeroes=n()) %>%
+    left_join(numzeroes, by="spp") %>%
+    mutate(propzeroes=(zeroes/(nonzeroes+zeroes))) %>%
+    arrange(propzeroes)
+  
+  # for now, we'll keep the top 25 species, which all have less than 60% zeroes
+  usable.spp <- propzeroes %>% filter(spp!="Mac.pyr")
+  usable.spp <- usable.spp$spp[1:25]
+  #***********************************
+  return(usable.spp)
+}
 
-# for now, we'll keep the top 25 species, which all have less than 60% zeroes
-usable.spp <- propzeroes %>% filter(spp!="Mac.pyr")
-usable.spp <- usable.spp$spp[1:25]
-#***********************************
+filter_normalize_data <- function(fulldat) {
+  usable.spp <- find_usable_spp(fulldat)
+  # normalize the time series
+  #***********************************
+  dat.norm <- fulldat %>% filter(spp %in% usable.spp) %>%
+    group_by(spp,site) %>%
+    mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
+    ungroup() %>%
+    unique()
+  write.csv(dat.norm,file=paste0(W_D,"/data/benth_data_trim_normalized.csv"))
+  return(dat.norm)
+}
 
-# normalize the time series
-#***********************************
-dat.norm <- fulldat %>% filter(spp %in% usable.spp) %>%
-  group_by(spp,site) %>%
-  mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
-  ungroup() %>%
-  unique()
-
-write.csv(dat.norm,file=paste0(W_D,"/data/benth_data_trim_normalized.csv"))
 ```
 
 Simplex and S_map function
 
 ```{r simplex and smap}
+# performs simplex and smap forecasting for an individual species time series, to look for appropriate embedding dimension (simplex) and signature of nonlinearity (s_map). Requires a dataset given by one of the functions above (full or normalized).
+  # lib_frac indicates the fraction of the embedded vectors to use as library vectors. If FALSE, uses leave-one-out cross validation in forecasting
 
 spp.simplex.smap <- function(data,species, lib_frac=0.5,plotout = TRUE) {
   
@@ -182,7 +202,7 @@ spp.simplex.smap <- function(data,species, lib_frac=0.5,plotout = TRUE) {
   
   # Now we can finally run simplex and s-map.
   # A NOTE HERE: using option exclusion_radius allows us to also remove from the library for each prediction the concurrent years' data from the other pooled timeseries, reducing overestimation due to spatial autocorrelation. For now we'll use an exclusion radius of 1 (for simplex) and min(3,E) for smap.
-  spp.simplex <- simplex(ts.mat,lib=rndlib,pred=rndpred,E=c(2:8))
+  spp.simplex <- simplex(ts.mat,lib=rndlib,pred=rndpred,E=c(2:6))
   if(plotout) {
     plot(spp.simplex$E,spp.simplex$rho,type="l",xlab="Embedding Dimension (E)",ylab="Forecast Skill(rho)",main=species)
   }
@@ -202,14 +222,23 @@ spp.simplex.smap <- function(data,species, lib_frac=0.5,plotout = TRUE) {
   if(plotout) {
     plot(spp.smap$theta,spp.smap$rho,type="l",xlab="Nonlinearity (theta)",ylab="Forecast Skill(rho)",main=species)
   }
+  
+  # Function returns a list with best embedding dimension (2-6), and results from simplex, prediction decay, and S-map
   out <- list(bestE=bestE,simp = spp.simplex,tp=spp.tp.test,smap = spp.smap)
   return(out)
 }
 ```
 
-Apply simplex and s_map to single species
+### Apply simplex and s_map to single species
+Here we actually run simplex and s-map to look for predictability
 
 ```{r apply simplex}
+
+# Get and process data
+fulldat <- process_raw_data()
+usable.spp <- find_usable_spp(fulldat)
+dat.norm <- filter_normalize_data(fulldat)
+
 # Lists to store simplex and smap output for each species
 spp.simp.list <- list()
 b.bestE <- data_frame(species = usable.spp,E=NA)
