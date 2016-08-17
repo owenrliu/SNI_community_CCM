@@ -38,12 +38,11 @@ library(reshape2)
 #### Data ####
 # The raw data has been processed into a set of normalized time series elsewhere.
 W_D <- getwd()
-dat.long <- read.csv(paste0(W_D,"/data/combined_processed_benthic_data.csv"))
+dat.long <- read.csv(paste0(W_D,"/data/combined_processed_benthic_data.csv")) %>% select(-X)
 
 # These data have more species than we need. These next lines pull out the relevant species for this study from the larger dataset and produce a block (wide-form) dataset.  Keep in mind, these data are from multiple transects across multiple sites on the small islands. Empirical dynamic modeling can use multiple spatial replicates to produce increased predictability by concatenating them into one long time series. We preserve a time indicator (variable 'period') to ensure that we do not "cross" the boundaries of replicate time series in following analyses.
 
-# First, filter for our species of interest.
-# Species Key
+# Species Key for all benthic density species
 #*************************************
 spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
 spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
@@ -52,12 +51,206 @@ spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
 spp.key.bdens$name <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
 # ************************************
 
-norm.ts.benth <- dat.norm %>%
-  select(-dens) %>%
-  spread(key=spp,value=norm)
+# Filter for our species of interest.
+#*************************************
+study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter","mac")
+dat.filt <- dat.long %>% filter(spp %in% study_spp)
+#*************************************
 
+# Now, we can normalize the time series, and cast to "wide" form data (where rows are time periods and columns are species)
+
+#Normalize ts ((x-mean(x))/sd(x))
+# ************************************
+dat.norm <- dat.filt %>%
+  group_by(spp,site) %>%
+  mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
+  ungroup() %>%
+  unique()
+#*************************************
+
+# Cast to wide form
+#*************************************
+dat.norm.block <- dat.norm %>%
+  select(-dens) %>%
+  spread(key=spp,value=norm) %>%
+  arrange(site)
+#*************************************
 ```
 
 ### Getting a Sense of the Data
 
-Our first task is just to look at the data over time.
+Our first task is just to look at the data over time. Let's explore (normalized) time series of our different variables.
+
+```{r data first look}
+plot(dat.norm.block$mac,type="l",main="Macrocystis time series",xlab="time",ylab="normalized density")
+plot(dat.norm.block$lam,type="l",main="Laminaria time series",xlab="time",ylab="normalized density")
+plot(dat.norm.block$pter,type="l",main="Pterogophora time series",xlab="time",ylab="normalized density")
+plot(dat.norm.block$red,type="l",main="Red urchin time series",xlab="time",ylab="normalized density")
+
+# For many of these time series, the last few 'sites', from SNI station 7, in the combined time series look like they have different dynamics. Let's remove them from the data.  We do more quantitative tests of the validity of combining sites' data below.
+
+dat.norm.block <- dat.norm.block %>% filter(!grepl("7",site))
+```
+
+### Establishing univariate predictability and nonlinearity
+For each of these time series, we have a few steps to see if they seem appropriate to analyze together.  First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection (which will also give us an idea of the appropriate embedding dimension). Then, we look for nonlinear dynamics with S-maps.  Finally, we can determine cross-predictability across sites to make sure it is appropriate to use all the data together.
+
+First, let's use simplex projection to investigate each species' self predictability.
+
+```{r univariate simplex}
+# For all the steps in the univariate analyses, we need an indication of the breaks in the different sites, or concurrent time series
+# This piece of code holds the row numbers of the first and last element of each time series
+segs_sites <- dat.norm.block %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+segs <- select(segs_sites,-site)
+
+# For this step, we use all the concatenated data
+simp.list <- list() # list to store output
+
+par(mfrow=c(2,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dat.norm.block %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(segs),silent=T)
+  simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=spp,xlab="Embedding Dimension (E)",ylab=expression(paste("Self-Forecast Skill, ",rho)))
+
+}
+```
+
+We can also look at prediction decay, another important property of deterministic chaos. This makes sure that nearby trajectories eventually diverge over time (the "butterfly effect"). Helps in distinguishing nonlinear systems from equilibrium-type systems. We want prediction to decline over time. For this simplex projection, we hold E, the embedding dimension, constant, and vary the prediction horizon, tp
+
+```{r prediction horizon}
+# Find best embedding dimension from previous step
+bestE <- sapply(simp.list,function(x) x$E[x$rho==max(x$rho)])
+tp.list <- list()
+
+par(mfrow=c(2,2))
+plot.new()
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dat.norm.block %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(segs),silent=T,E=bestE[i],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=spp,xlab="Time to Prediction",ylab=expression(paste("Self-Forecast Skill, ",rho)))
+}
+```
+
+All of the variables show a decent ability to self-predict, as shown by simplex projection.  Some of them require high embedding dimensions, though, which is somewhat worrying. However, the butterfly effect check is promising, as all variables decline in predictive ability with time horizon.  For now, we'll keep all variables.
+
+Next is to look for nonlinearity with S-maps. The S-maps procedure has a parameter, $\theta$, that can "tune" the projection algorithm to weight local state-space neighborhoods more highly, the implication being that if predictability improves with increased $\theta$, variables are better predicted by local neighborhoods rather than global linear models, indicating state-dependence or nonlinearity of dynamics.
+
+For prediction of each variable, we'll use the optimal embedding dimension found in the previous step (the E with highest predictive ability).
+
+```{r univariate s_maps}
+smap.list <- list() # list to store output
+
+par(mfrow=c(2,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dat.norm.block %>% select(matches(spp)) %>% as.data.frame()
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(segs),E=bestE[i],silent=T)
+  simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=spp,xlab=expression(paste("Nonlinearity (",theta,")")),ylab=expression(paste("Self-Predictive Ability ",rho)))
+}
+ptm<-proc.time()
+test<-simplex(as.numeric(dat[,1]),lib=as.matrix(segs)[1:5,],pred=as.matrix(segs)[11:15,],silent=T)
+proc.time()-ptm
+```
+
+All variables show significantly improved predictive ability with increased theta, suggesting strong nonlinear dynamics.
+Together, the simplex and S-map results suggest our approach is valid--variables are predictable, but predictable in a nonlinear way.
+
+Now we have to check to see if different sites have cross-predictability, to validate our choice to pool all of the data. To do this is a bit tricky. The data collected at San Nicolas Island is nested: transects within sites.  Here, we'll keep the individual transect time series within each site pooled, but test for predictability *between sites*.
+
+For each species, we'll use simplex projection, but varying the "library" and "prediction" sets to explicit match the 6 different sites and see how well they can cross-predict.  Because this is not necessarily a symmetrical process (e.g., for a given species, site 1 may predict the dynamics of site 2 better than site 2 can predict site 1), there will be 36 runs for each species (6 sites times 6 crosses per site, itself and the 5 other sites).  To make the output cleaner, we'll simply extract the best rho from each run, and ensure that it is significantly greater than zero.
+
+```{r data combination check}
+# For each individual simplex run, we use a subset of the block data, according to the original segments key:
+site_rows <- segs_sites %>% 
+  separate(site,into=c("site","transect"),sep="_") %>%
+  select(-transect) %>%
+  as.data.frame()
+
+# This is a list, each element holding an identifier of the subset time series (the transects) within each site.
+site_rows_list <- split(site_rows,site_rows$site)
+# Possible combinations of sites
+site.combinations <- expand.grid(1:6,1:6) %>% 
+  rename(libs=Var1,preds=Var2)
+
+# List to hold output of cross-checks
+dat.comb.check <- list()
+
+# Run the simplex projections
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dat.norm.block %>% select(matches(spp)) %>% as.data.frame()
+  dat <- as.numeric(dat[,1])
+  out.mat <- matrix(nrow=6,ncol=6,dimnames=list(as.character(1:6),as.character(1:6)))
+  
+  # For each species, test each combination of sites
+  for(j in 1:nrow(site.combinations)) {
+    # Form a set of library and prediction vectors from different sites
+    lib <- site.combinations[j,1]
+    pred <- site.combinations[j,2]
+    
+    # Run the simplex model, pulling the correct library and prediction vectors from the list of site-specific time series
+    simp <- simplex(dat,lib=as.matrix(site_rows_list[[lib]][,2:3]),pred=as.matrix(site_rows_list[[pred]][,2:3]),silent=T)
+    
+    # Pull out the best predictive ability between the two sites. If all p-values (using Fisher's z) greater than 0.05, return NA
+    if(min(simp$p_val>0.05)) {
+      out <- NA
+    } else {
+      out <- max(simp$rho)
+    }
+    out.mat[lib,pred] <- out
+  }
+  
+  # For each species, return matrix of sites' cross-predictability
+  dat.comb.check[[spp]] <- out.mat
+}
+```
+
+We can plot 6 by 6 raster-type grids for each species, displaying the results of this exercise.
+
+```{r site cross prediction plots}
+
+# List to hold plot output
+x_predict_plots <- list()
+
+# Create a raster for each species result from the previous step
+master_raster <- data_frame(species=character(),lib=character(),pred=character(),rho=numeric())
+
+for(i in 1:length(dat.comb.check)) {
+  spp <- names(dat.comb.check)[i]
+  
+  # Raster data for plotting
+  sppmat <- as.data.frame(dat.comb.check[[i]])
+  cross.rast <- sppmat %>% 
+    mutate(lib=row.names(sppmat)) %>% 
+    gather(key=pred,value=rho,1:6) %>%
+    arrange(desc(rho)) %>%
+    mutate(species=study_spp[i])
+  master_raster <- bind_rows(master_raster,cross.rast)
+}
+  # Plot
+x_predict_by_spp <- ggplot(master_raster,aes(x=lib,y=pred,fill=rho)) +
+  geom_raster() +
+  scale_fill_distiller(palette="Spectral",limits=c(0.1,0.9),name=expression(paste(rho, "(max skill)"))) +
+  ggtitle(paste("Site Cross Predictability by Species")) +
+  xlab("Library Site") +
+  ylab("Forecasted Site")+
+  facet_wrap(~species)
+ggsave("x_pred_spp.png")
+```
+
+Rows or columns that appear gray or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.
