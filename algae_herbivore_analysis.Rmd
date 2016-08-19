@@ -251,4 +251,88 @@ x_predict_by_spp
 ggsave("x_pred_spp.png")
 ```
 
-Rows or columns that appear gray or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.
+Rows or columns that appear gray (NA, non-significant forecast skill) or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.  A couple of things to notice:
+
+* All species have high ($\rho$ >0.5) cross-predictability at some sites
+* *Megastraea*'s dynamics at site 5 seem to be both unpredictable, and not useful for predicting other sites.
+* *Pisaster* is difficult to forecast at sites 5 and 6
+* There is some evidence that sites that are closest spatially (e.g., sites 2/3 and 4/5) have the most cross-predictability of dynamics, which makes sense.  This will not be examined further here, but worth noting.
+
+The next step will be to see if these species show signs of causative links.
+
+### Determining Causation Between Species
+
+Generalizations of Takens' theorem indicate that if two variables (in our case, species) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence. In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to forecast another. If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, if A causes B, we should be able to recover the dynamics of A using a reconstruction of B. We say that the *causal effect of A on B is determined by how well B cross-maps A*.
+
+Cross-mapping can distinguish unidirectional forcing (A forces B but B doesn't force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C).  To look for a causal signal, we plot predictive skill against library size (the number of embedded vectors used to construct the attractor). Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and estimation error should decline.
+
+We can use this theory to build a causal network in our kelp forest algae/invertebrate system.
+
+CCM uses a random sampling method to test multiple "versions" of each library size, sampling from the supplied library vectors to give a sense of the confidence intervals around prediction skill. However, just like before, because we're using multiple, simultaneous time series, we have to indicate the breaks in those time series so the algorithm does not try to make predictions spanning multiple time series. Also, to be more conservative, we'll use only a random half of each time series for attractor reconstruction, and apply it to predicting the other half.
+
+```{r CCM segments}
+# Block of time series for running CCM. Same as before, with the site identifier removed.
+CCM.block <- dat.norm.block %>% select(-site) %>% as.data.frame()
+
+set.seed(42)
+# Sample one half of time series segments, without replacement
+rnd_lib_segs <- sample_frac(segs,0.5,replace=F) %>% arrange(first)
+# Use other half for prediction
+rnd_pred_segs <- anti_join(segs,rnd_lib_segs,by=c("first","last")) %>% arrange(first)
+
+rnd_lib_segs <- as.matrix(rnd_lib_segs)
+rnd_pred_segs <- as.matrix(rnd_pred_segs)
+```
+
+We can now apply CCM. Let's start simple, and see which invertebrates seem to have a causal influence on *Macrocystis pyrifera*, the giant kelp, and vice versa. We accomplish this by building a library with *Macrocystis* vectors, and cross-mapping the invertebrates
+
+```{r CCM macro}
+# Red urchin
+mac_xmap_red <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["mac"],lib_column = "mac",
+                    target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+red_xmap_mac <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["red"],lib_column = "red",
+                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+# To plot, we need to find means and sd's for each library size
+mac_xmap_red_means <- mac_xmap_red %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
+red_xmap_mac_means <- red_xmap_mac %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
+
+ggplot()+
+  geom_line(data=mac_xmap_red_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Red Urchin"))+
+  geom_ribbon(data=mac_xmap_red_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Macrocystis xmap Red Urchin"),alpha=0.3)+
+  geom_line(data=red_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Red Urchins xmap Macrocystis"))+
+  geom_ribbon(data=red_xmap_mac_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Red Urchins xmap Macrocystis"),alpha=0.3)+
+  scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
+  scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
+  ylim(-0.1,0.15) +
+  ggtitle("Macrocystis and Red Urchin Cross Mapping")+
+  xlab("Library size")+
+  ylab(expression(paste("Cross-map skill, ",rho)))
+
+## Macrocystis and purple urchins
+
+mac_xmap_purp <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["mac"],lib_column = "mac",
+                    target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+purp_xmap_mac <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["purp"],lib_column = "purp",
+                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+# To plot, we need to find means and sd's for each library size
+mac_xmap_purp_means <- mac_xmap_purp %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
+purp_xmap_mac_means <- purp_xmap_mac %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
+
+ggplot()+
+  geom_line(data=mac_xmap_purp_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Purple Urchin"))+
+  geom_ribbon(data=mac_xmap_purp_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Macrocystis xmap purp Urchin"),alpha=0.3)+
+  geom_line(data=purp_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Purple Urchins xmap Macrocystis"))+
+  geom_ribbon(data=purp_xmap_mac_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Purple Urchins xmap Macrocystis"),alpha=0.3)+
+  scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
+  scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
+  ylim(-0.1,0.5) +
+  ggtitle("Macrocystis and Purple Urchin Cross Mapping")+
+  xlab("Library size")+
+  ylab(expression(paste("Cross-map skill, ",rho)))
+```

@@ -1,0 +1,12 @@
+---
+author: "Owen Liu"
+date: "August 17, 2016"
+output: html_document
+---
+
+Rows or columns that appear gray (NA, non-significant forecast skill) or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.  A couple of things to notice:
+
+* All species have high ($\rho$ >0.5) cross-predictability at some sites
+* *Megastraea*'s dynamics at site 5 seem to be both unpredictable, and not useful for predicting other sites.
+* *Pisaster* is difficult to forecast at sites 5 and 6
+* There is some evidence that sites that are closest spatially (e.g., sites 2/3 and 4/5) have the most cross-predictability of dynamics, which makes sense.  This will not be examined further here, but worth noting.
