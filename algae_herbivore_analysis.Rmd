@@ -66,6 +66,16 @@ dat.norm <- dat.filt %>%
   ungroup() %>%
   unique()
 #*************************************
+# Now, we can normalize the time series, and cast to "wide" form data (where rows are time periods and columns are species)
+
+#Normalize ts ((x-mean(x))/sd(x))
+# ************************************
+dat.norm <- dat.filt %>%
+  group_by(spp,site) %>%
+  mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
+  ungroup() %>%
+  unique()
+#*************************************
 
 # Cast to wide form
 #*************************************
@@ -161,6 +171,10 @@ for(i in 1:length(study_spp)) {
   # Plot embedding dimension vs. predictive ability (rho)
   plot(out$theta,out$rho,type="l",main=spp,xlab=expression(paste("Nonlinearity (",theta,")")),ylab=expression(paste("Self-Predictive Ability ",rho)))
 }
+
+ptm<-proc.time()
+test<-simplex(as.numeric(dat[,1]),lib=as.matrix(segs)[1:5,],pred=as.matrix(segs)[11:15,],silent=T)
+proc.time()-ptm
 ```
 
 All variables show significantly improved predictive ability with increased theta, suggesting strong nonlinear dynamics.
@@ -218,8 +232,8 @@ for(i in 1:length(study_spp)) {
 
 We can plot 6 by 6 raster-type grids for each species, displaying the results of this exercise.
 
+<<<<<<< HEAD
 ```{r site cross prediction plots, echo=F}
-
 # List to hold plot output
 x_predict_plots <- list()
 
@@ -335,4 +349,8 @@ ggplot()+
   ggtitle("Macrocystis and Purple Urchin Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
+ggsave("x_pred_spp.png")
 ```
+
+Rows or columns that appear gray or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.
+>>>>>>> 64291813f70ad714130d82800745d432ec226fa5
