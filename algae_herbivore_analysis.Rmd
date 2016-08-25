@@ -7,6 +7,7 @@ output: html_document
 
 ## An Empirical Dynamic Exploration
 
+### 1. Introduction
 This project will use data from a long-term monitoring project at San Nicolas Island to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive and predatory/herbivorous interactions in real time across the timeframe of the dataset.  The species we will look at are:
 
 * Brown algaes:
@@ -86,7 +87,7 @@ dat.norm.block <- dat.norm %>%
 #*************************************
 ```
 
-### Getting a Sense of the Data
+### 2. Getting a Sense of the Data
 
 Our first task is just to look at the data over time. Let's explore (normalized) time series of our different variables.
 
@@ -101,7 +102,7 @@ plot(dat.norm.block$red,type="l",main="Red urchin time series",xlab="time",ylab=
 dat.norm.block <- dat.norm.block %>% filter(!grepl("7",site))
 ```
 
-### Establishing univariate predictability and nonlinearity
+### 3. Establishing univariate predictability and nonlinearity
 For each of these time series, we have a few steps to see if they seem appropriate to analyze together.  First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection (which will also give us an idea of the appropriate embedding dimension). Then, we look for nonlinear dynamics with S-maps.  Finally, we can determine cross-predictability across sites to make sure it is appropriate to use all the data together.
 
 First, let's use simplex projection to investigate each species' self predictability.
@@ -166,7 +167,7 @@ for(i in 1:length(study_spp)) {
   spp <- study_spp[i]
   dat <- dat.norm.block %>% select(matches(spp)) %>% as.data.frame()
   out <- s_map(as.numeric(dat[,1]),lib=as.matrix(segs),E=bestE[i],silent=T)
-  simp.list[[spp]] <- out
+  smap.list[[spp]] <- out
   
   # Plot embedding dimension vs. predictive ability (rho)
   plot(out$theta,out$rho,type="l",main=spp,xlab=expression(paste("Nonlinearity (",theta,")")),ylab=expression(paste("Self-Predictive Ability ",rho)))
@@ -232,8 +233,7 @@ for(i in 1:length(study_spp)) {
 
 We can plot 6 by 6 raster-type grids for each species, displaying the results of this exercise.
 
-<<<<<<< HEAD
-```{r site cross prediction plots, echo=F}
+```{r site cross prediction plots, echo=F,message=F}
 # List to hold plot output
 x_predict_plots <- list()
 
@@ -274,11 +274,11 @@ Rows or columns that appear gray (NA, non-significant forecast skill) or very co
 
 The next step will be to see if these species show signs of causative links.
 
-### Determining Causation Between Species
+### 4. Determining Causation Between Species
 
 Generalizations of Takens' theorem indicate that if two variables (in our case, species) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence. In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to forecast another. If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, if A causes B, we should be able to recover the dynamics of A using a reconstruction of B. We say that the *causal effect of A on B is determined by how well B cross-maps A*.
 
-Cross-mapping can distinguish unidirectional forcing (A forces B but B doesn't force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C).  To look for a causal signal, we plot predictive skill against library size (the number of embedded vectors used to construct the attractor). Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and estimation error should decline.
+Cross-mapping can distinguish unidirectional forcing (A forces B but B doesn't force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C).  To look for a causal signal, we plot predictive skill against library size (the number of embedded vectors used to construct the attractor). There are two criteria for CCM to establish causality. First, and most obviously, predictive cross-map skill using all available data should be significantly greater than zero. Second, that predictability should be convergent.  Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and estimation error should decline.
 
 We can use this theory to build a causal network in our kelp forest algae/invertebrate system.
 
@@ -288,7 +288,7 @@ CCM uses a random sampling method to test multiple "versions" of each library si
 # Block of time series for running CCM. Same as before, with the site identifier removed.
 CCM.block <- dat.norm.block %>% select(-site) %>% as.data.frame()
 
-set.seed(42)
+set.seed(4215)
 # Sample one half of time series segments, without replacement
 rnd_lib_segs <- sample_frac(segs,0.5,replace=F) %>% arrange(first)
 # Use other half for prediction
@@ -298,59 +298,217 @@ rnd_lib_segs <- as.matrix(rnd_lib_segs)
 rnd_pred_segs <- as.matrix(rnd_pred_segs)
 ```
 
-We can now apply CCM. Let's start simple, and see which invertebrates seem to have a causal influence on *Macrocystis pyrifera*, the giant kelp, and vice versa. We accomplish this by building a library with *Macrocystis* vectors, and cross-mapping the invertebrates
+We can now apply CCM. Let's start simple, and see which invertebrates seem to have a causal influence on *Macrocystis pyrifera*, the giant kelp, and vice versa. We accomplish this by building a library with *Macrocystis* vectors, and cross-mapping the invertebrates. For example, we can see if there is a causal signal between *Macrocystis* and the two urchin species:
 
-```{r CCM macro}
+```{r CCM macro, message=F, echo=F}
+# zero cutoff function: if rho is less than zero, it doesn't make sense, so we'll set those values to zero for cleaner results
+cut_to_zero <- function(x) sapply(x, function(y) ifelse(y<0,0,y))
+
 # Red urchin
-mac_xmap_red <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["mac"],lib_column = "mac",
+mac_xmap_red <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "mac",
                     target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
-red_xmap_mac <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["red"],lib_column = "red",
+red_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "red",
                     target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
-# To plot, we need to find means and sd's for each library size
-mac_xmap_red_means <- mac_xmap_red %>% group_by(lib_size) %>% 
-  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
-red_xmap_mac_means <- red_xmap_mac %>% group_by(lib_size) %>% 
-  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
 
-ggplot()+
+# To plot, we need to find means and sd's for each library size
+mac_xmap_red_means <- mac_xmap_red %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+
+red_xmap_mac_means <- red_xmap_mac %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+
+mac_x_red_plot <- ggplot()+
   geom_line(data=mac_xmap_red_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Red Urchin"))+
-  geom_ribbon(data=mac_xmap_red_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Macrocystis xmap Red Urchin"),alpha=0.3)+
+  geom_ribbon(data=mac_xmap_red_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Macrocystis xmap Red Urchin"),alpha=0.3)+
   geom_line(data=red_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Red Urchins xmap Macrocystis"))+
-  geom_ribbon(data=red_xmap_mac_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Red Urchins xmap Macrocystis"),alpha=0.3)+
+  geom_ribbon(data=red_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Red Urchins xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
   theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.1,0.15) +
+  ylim(-0.05,0.3) +
   ggtitle("Macrocystis and Red Urchin Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
 
 ## Macrocystis and purple urchins
 
-mac_xmap_purp <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["mac"],lib_column = "mac",
+mac_xmap_purp <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "mac",
                     target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
-purp_xmap_mac <- ccm(CCM.block, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["purp"],lib_column = "purp",
+purp_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["purp"],lib_column = "purp",
                     target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
 # To plot, we need to find means and sd's for each library size
-mac_xmap_purp_means <- mac_xmap_purp %>% group_by(lib_size) %>% 
-  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
-purp_xmap_mac_means <- purp_xmap_mac %>% group_by(lib_size) %>% 
-  summarise(mean.rho=mean(rho), sd.rho=sd(rho))
+mac_xmap_purp_means <- mac_xmap_purp %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
 
-ggplot()+
+purp_xmap_mac_means <- purp_xmap_mac %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))%>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+
+mac_x_purp_plot <- ggplot()+
   geom_line(data=mac_xmap_purp_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Purple Urchin"))+
-  geom_ribbon(data=mac_xmap_purp_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Macrocystis xmap purp Urchin"),alpha=0.3)+
+  geom_ribbon(data=mac_xmap_purp_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Macrocystis xmap purp Urchin"),alpha=0.3)+
   geom_line(data=purp_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Purple Urchins xmap Macrocystis"))+
-  geom_ribbon(data=purp_xmap_mac_means,aes(x=lib_size,ymin=mean.rho-sd.rho,ymax=mean.rho+sd.rho,fill="Purple Urchins xmap Macrocystis"),alpha=0.3)+
+  geom_ribbon(data=purp_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Purple Urchins xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
   theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.1,0.5) +
+  ylim(-0.05,0.5) +
   ggtitle("Macrocystis and Purple Urchin Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
-ggsave("x_pred_spp.png")
+
+mac_x_red_plot
+mac_x_purp_plot
 ```
 
-Rows or columns that appear gray or very cool (blue-ish) in these plots indicate sites for each species that may not be appropriate to include, as their dynamics are not significantly cross-predictable.
->>>>>>> 64291813f70ad714130d82800745d432ec226fa5
+This initial look suggests that both urchin species affect, and are affected by, the giant kelp. In the red urchin case, the *Macrocystis* seems to drive red urchin dynamics more than urchins drive kelp, but in the case of purple urchins, there is evidence of bi-directional causation.  For both cross-mappings, cross-map skill, while significantly greater than zero, is not particularly strong, suggesting there are other important variables to consider.
+
+Applying CCM in this way to all combinations of species in our data, we can build a "causal web", looking at the strength of cross-map skill between all species.  Importantly, as evidenced by the red urchin example above, CCM is non-symmetrical, and hence the cross-map of A on B is not the same as the cross-map of B on A. For the sake of comparison, we can also build a traditional cross-correlation matrix between the same timeseries.
+
+```{r CCM all species}
+ncol <- dim(CCM.block)[2]-1
+col.names <- colnames(CCM.block)[2:(ncol+1)]
+xmap_mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 
+# 1 minus the number of positive results for rho divided by the number of iterations)
+p1.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).  If rho does not converge with library length, it may be a sign of synchrony.
+p2.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+ptot.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+
+## Run CCM for each combination of variables
+for(i in 1:ncol) {
+  for(j in 1:ncol) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the library variable (the predicted variable, j)
+      tempE=bestE[col.names[j]]
+      temp <- ccm(CCM.block,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column = 1+i,target_column = 1+j,
+                  lib_sizes = c(10,500),replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
+      xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at largest library size)
+      p1 <- temp %>% filter(lib_size==500) %>% mutate(pos=ifelse(rho>0,1,0)) %>% summarise(p=(1-sum(pos)/n()))
+      p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==500])$p.value
+      p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+```
+
+We can output this result in a grid similar to before, except will all cross-species combinations instead of species x site
+
+```{r CCM raster, echo=F}
+xmap_rast <- as.data.frame(xmap_mat*ptot.mat) %>% 
+  mutate(predictee=row.names(xmap_mat)) %>% 
+  gather(key=predictor,value=rho,cys:wavy) %>%
+  arrange(desc(rho))
+
+# If rho is zero, replace with NA (no significant causal signal)
+xmap_rast$rho[xmap_rast$rho==0] <- NA
+
+## plot
+xmap_all_plot <- ggplot(xmap_rast,aes(x=predictor,y=predictee,fill=rho)) +
+  geom_raster() +
+  scale_fill_distiller(palette="Spectral",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping") +
+  xlab("Predictor") +
+  ylab("Predictee") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+xmap_all_plot
+ggsave("xmap_all.png")
+```
+
+From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The strongest forcing variables of giant kelp dynamics are actually not the urchins, but rather two understory kelps, *Laminaria spp.* and *Pterogophora californica*. The *Macrocystis*, in turn, displays a causal effct on purple urchins *Strongylocentrotus purpuratus*, and to a lesser extent red urchins *S. franciscanus*, *Laminaria*, and *Cystoseira osmundacea*.  Looking at the data another way, we can build an interaction web, and also see the number of link (causal or caused by) for each species (its network centrality).
+
+```{r causal web and interactions, echo=F,message=F}
+library(igraph) # Package for network graphing and analysis
+g <- graph.adjacency(t(ptot.mat))
+par(mfrow=c(1,1))
+V(g)$label <- paste(sep="\n",V(g)$name, degree(g))
+# vector of node colors for plotting
+vert.cols <- c(rep("tan3",4),rep("orchid3",3),"tan3",rep("orchid3",2),"darkseagreen")
+
+plot(g,asp=FALSE, vertex.label.color="black", vertex.label.cex=1, edge.arrow.size=0.6,vertex.label.font=2, vertex.size=20, edge.color="gray40",vertex.frame.color=F,vertex.color=vert.cols,edge.curved=F,main="Kelp Forest Causal Web")
+
+legend(x=-1, y=-1, c("Brown Algae","Echinoderms", "Gastropods"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen"), pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+Although this is a busy network, it suggests two things to me, both of which agree with a lot of previous work:
+
+* Kelp forests are dynamically complex, with an intricate network of causal interactions between species
+* The algaes (primary producers) are central to dynamics, having the most connections, followed by the two urchin species
+
+Given that these species are so interconnected, it may be that we could better predict dynamics by building composite attractors from multiple species' time series. Similar to the theory behind CCM, extensions of Takens' theorem provide the basis for multivariate state-space reconstruction.  Using the normalized time series as before, we'll build library vectors that include lagged coordinates of the variable we're trying to predict, as well as other variables illuminated by our CCM analysis.
+
+### 5. Multivariate CCM
+
+We do not want to just throw all variables into our multivariate reconstructions. Instead, we can add variables one by one, to see how much predictability they add to the overall model. To keep it simple for now, we'll focus on predicting the dynamics of *Macrocystis pyrifera*.
+
+We start with a univariate reconstruction (lagged versions of the same time series, just as in Section 3)
+```{r macro univariate prediction}
+# Create a block of time series
+# Similar to the block used for CCM, but for multivariate embeddings we have to manually lag the variable
+multiblock <- dat.norm.block %>%
+  group_by(site) %>%
+  # manual lags for macrocystis
+  mutate(mac.lag1=lag(mac,1),mac.lag2=lag(mac,2),mac.lag3=lag(mac,3),mac.lag4=lag(mac,4),mac.lag5=lag(mac,5)) %>%
+  # manual lags for pterogophora
+  mutate(pter.lag1=lag(pter,1),pter.lag2=lag(pter,2)) %>%
+  # manual lags for laminaria
+  mutate(lam.lag1=lag(lam,1),lam.lag2=lag(lam,2)) %>%
+  ungroup() %>%
+  select(-site)
+
+mac.univar <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("mac","mac.lag1","mac.lag2","mac.lag3","mac.lag4","mac.lag5"),target_column = "mac",stats_only = F,silent=T)
+
+# We can plot observed vs. predicted values to see how well the univariate reconstruction did
+univar.out <- mac.univar[[1]]$model_output
+
+# Correlation between observed and predicted
+univar.corr <- round(mac.univar[[1]]$stats$rho,3)
+
+par(mfrow=c(1,1),xpd=F)
+plot_range <- range(c(univar.out$obs, univar.out$pred), na.rm = TRUE)
+plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",xlim=plot_range,ylim=plot_range,cex=0.8,main=expression(paste("Univariate Embedding (E=6), ",rho,"=0.577")))
+
+# "Perfect fit", 1:1 line
+abline(a=0,b=1,lty=2,col="gray40")
+# Best fit line
+abline(lm(univar.out$pred ~ univar.out$obs), col = "black", lty = 3, lwd = 2)
+```
+
+Next, we'll add the variable that had the best cross-map predictability of *Macrocystis* dynamics: *Pterogophora*.
+
+The idea is the same, but we include the pterogophora time series as one more embedded dimension
+
+```{r macro multi pter}
+mac.multi.pter <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("mac","mac.lag1","mac.lag2","pter","pter.lag1","pter.lag2"),target_column = "mac",stats_only = F,silent=T)
+
+mac.multi.pter[[1]]$stats$rho
+
+```
