@@ -453,16 +453,56 @@ Although this is a busy network, it suggests two things to me, both of which agr
 * Kelp forests are dynamically complex, with an intricate network of causal interactions between species
 * The algaes (primary producers) are central to dynamics, having the most connections, followed by the two urchin species
 
-Given that these species are so interconnected, it may be that we could better predict dynamics by building composite attractors from multiple species' time series. Similar to the theory behind CCM, extensions of Takens' theorem provide the basis for multivariate state-space reconstruction.  Using the normalized time series as before, we'll build library vectors that include lagged coordinates of the variable we're trying to predict, as well as other variables illuminated by our CCM analysis.
+### 5. Adding Physical Variables
 
-### 5. Multivariate CCM
+The steps we've taken so far have established the relationships and cross-predictability between algae and invertebrates species in kelp forests.  We've shown that dynamics for some species are quite predictable, and that there are some species that seem to be "central" to kelp forest dynamics as a whole.
+
+However, one thing we haven't yet investigated is where physical forcing fits into the story. A body of other research has established that a combination of physical forcing (waves, storms), temperature, and lower frequency climate modes (e.g., El Ninos) have an important influence on the dynamics of kelp. In this section, we'll explore how those types of data influence the dynamics of our local-scale kelp forest species. Interestingly, by using cross-mapping, we'll be able to draw connections between the physical variables and not just *Macrocystis*, but all of the species in our constrained trophic web.
+
+We have four datasets, already processed into the same time frame (periods) as the SNI benthic monitoring data:
+
+* The Multivariate ENSO index (MEI)
+  + The first principal component of a composite set of physical parameters
+  + from NOAA, http://www.esrl.noaa.gov/psd/enso/mei
+  + Variable here is the average index value for the four months preceding each Spring or Fall monitoring period (i.e., December to March or June to September, respectively)
+* The Pacific Decadal Oscillation index (PDO)
+  + Leading empirical orthogonal function (EOF) of monthly sea surface temperature anomalies (SST-A) over the North Pacific (poleward of 20° N) after the global average sea surface temperature has been removed
+  + obtained from http://research.jisao.washington.edu/pdo/
+  + Aggregated and averaged the same way as MEI
+* The North Pacific Gyre Oscillation (NPGO)
+  + from Di Lorenzo, 2008, http://www.o3d.org/npgo/
+  + climate pattern that emerges as the 2nd dominant mode of sea surface height variability (2nd EOF SSH) in the Northeast Pacific
+  + better correlated with salinity, nutrients, and chlorophyll than PDO
+  + Aggregated and averaged the same way as MEI and PDO
+* Sea surface temperature (SST)
+  + Sea surface temperature data from Begg Rock and San Nicolas Island buoys, from the Coastal Data Information Program (CDIP), cdip.ucsd.edu
+  + Incomplete data
+  + Similar to the above, value is an average SST for the four months preceding each period
+* Maximum significant wave height (Hs)
+  + Also from the Begg and SNI buoys and the CDIP
+  + Signficant wave height is defined as the average height, in meters, of the one third highest waves in the record
+  + Instead of an average, value here is the maximum significant wave height of the four months preceding each period. This is meant to capture any large storm events, as well as general level of physical disturbance
+  
+As with the other variables in our analysis, these physical variables have been normalized to zero mean and unit variance to facilitate comparison among variables and not distort state-space reconstructions.
+
+```{r physical variable import}
+# Read in the variables
+phys.dat.norm <- read.csv(paste0(W_D,"/data/phys_vars_combined_norm.csv"))
+
+# Combine with CCM block data, by period
+CCM.block.phys <- CCM.block %>% left_join(phys.dat.norm,by="period")
+```
+
+### 6. Multivariate CCM
+
+Given that these species are so interconnected, it may be that we could better predict dynamics by building composite attractors from multiple species' time series. Similar to the theory behind CCM, extensions of Takens' theorem provide the basis for multivariate state-space reconstruction.  Using the normalized time series as before, we'll build library vectors that include lagged coordinates of the variable we're trying to predict, as well as other variables illuminated by our CCM analysis.
 
 We do not want to just throw all variables into our multivariate reconstructions. Instead, we can add variables one by one, to see how much predictability they add to the overall model. To keep it simple for now, we'll focus on predicting the dynamics of *Macrocystis pyrifera*.
 
 We start with a univariate reconstruction (lagged versions of the same time series, just as in Section 3)
 ```{r macro univariate prediction}
 # Create a block of time series
-# Similar to the block used for CCM, but for multivariate embeddings we have to manually lag the variable
+# Similar to the block used for CCM, but for multivariate embeddings we have to manually lag the variables
 multiblock <- dat.norm.block %>%
   group_by(site) %>%
   # manual lags for macrocystis
