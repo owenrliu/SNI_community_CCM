@@ -67,16 +67,6 @@ dat.norm <- dat.filt %>%
   ungroup() %>%
   unique()
 #*************************************
-# Now, we can normalize the time series, and cast to "wide" form data (where rows are time periods and columns are species)
-
-#Normalize ts ((x-mean(x))/sd(x))
-# ************************************
-dat.norm <- dat.filt %>%
-  group_by(spp,site) %>%
-  mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
-  ungroup() %>%
-  unique()
-#*************************************
 
 # Cast to wide form
 #*************************************
@@ -481,6 +471,8 @@ multiblock <- dat.norm.block %>%
   mutate(pter.lag1=lag(pter,1),pter.lag2=lag(pter,2)) %>%
   # manual lags for laminaria
   mutate(lam.lag1=lag(lam,1),lam.lag2=lag(lam,2)) %>%
+  #purp
+  mutate(purp.lag1=lag(purp,1),purp.lag2=lag(purp,2)) %>%
   ungroup() %>%
   select(-site)
 
@@ -509,6 +501,10 @@ The idea is the same, but we include the pterogophora time series as one more em
 ```{r macro multi pter}
 mac.multi.pter <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("mac","mac.lag1","mac.lag2","pter","pter.lag1","pter.lag2"),target_column = "mac",stats_only = F,silent=T)
 
+mac.multi <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("lam","lam.lag1","lam.lag2","pter","pter.lag1","pter.lag2","purp","purp.lag1","purp.lag2"),target_column = "mac",stats_only = F,silent=T)
+
 mac.multi.pter[[1]]$stats$rho
 
+mac.multi.purp[[1]]$stats$rho
+mac.multi[[1]]$stats$rho
 ```
