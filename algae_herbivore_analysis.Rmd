@@ -295,10 +295,10 @@ We can now apply CCM. Let's start simple, and see which invertebrates seem to ha
 cut_to_zero <- function(x) sapply(x, function(y) ifelse(y<0,0,y))
 
 # Red urchin
-mac_xmap_red <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "mac",
-                    target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
-red_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "red",
-                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+mac_xmap_red <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "mac",
+                    target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+red_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "red",
+                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
 
 # To plot, we need to find means and sd's for each library size
 mac_xmap_red_means <- mac_xmap_red %>% 
@@ -320,18 +320,20 @@ mac_x_red_plot <- ggplot()+
   geom_ribbon(data=red_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Red Urchins xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.3) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1),
+        panel.background=element_rect(fill="white",color="black"))+
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
+  ylim(-0.05,0.5) +
   ggtitle("Macrocystis and Red Urchin Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
 
 ## Macrocystis and purple urchins
 
-mac_xmap_purp <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "mac",
-                    target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
-purp_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["purp"],lib_column = "purp",
-                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,400,by=50)),first_column_time = T,silent=T)
+mac_xmap_purp <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["purp"],lib_column = "mac",
+                    target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+purp_xmap_mac <- ccm(CCM.block, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "purp",
+                    target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
 # To plot, we need to find means and sd's for each library size
 mac_xmap_purp_means <- mac_xmap_purp %>% 
   group_by(lib_size) %>% 
@@ -351,7 +353,9 @@ mac_x_purp_plot <- ggplot()+
   geom_ribbon(data=purp_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Purple Urchins xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1),
+        panel.background=element_rect(fill="white",color="black"))+
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ylim(-0.05,0.5) +
   ggtitle("Macrocystis and Purple Urchin Cross Mapping")+
   xlab("Library size")+
@@ -389,13 +393,13 @@ for(i in 1:ncol) {
       # remember, we use the best embedding dimension for the library variable (the predicted variable, j)
       tempE=bestE[col.names[j]]
       temp <- ccm(CCM.block,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column = 1+i,target_column = 1+j,
-                  lib_sizes = c(10,500),replace=T,silent=T)
+                  lib_sizes = c(10,500,1000),replace=T,silent=T)
       # mean rho at library size 500
-      rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
+      rhomean <- temp %>% filter(lib_size==1000) %>% ccm_means()
       xmap_mat[i,j] <- rhomean$rho
       
       # first p-value (greater than zero? at largest library size)
-      p1 <- temp %>% filter(lib_size==500) %>% mutate(pos=ifelse(rho>0,1,0)) %>% summarise(p=(1-sum(pos)/n()))
+      p1 <- temp %>% filter(lib_size==1000) %>% mutate(pos=ifelse(rho>0,1,0)) %>% summarise(p=(1-sum(pos)/n()))
       p1.mat[i,j] <- as.numeric(p1)
       
       # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
@@ -407,6 +411,8 @@ for(i in 1:ncol) {
     }
   }
 }
+rm(tempE)
+rm(temp)
 ```
 
 We can output this result in a grid similar to before, except will all cross-species combinations instead of species x site
@@ -531,9 +537,9 @@ for(i in 1:length(phys.vars)) {
 All variables show significant nonlinearity except for the NPGO. We can now cross-map to see if any of the physical variables have significant predictive skill.
 
 ```{r ccm mac mei}
-mac_xmap_mei <- ccm(CCM.block.phys,E=bestE["mac"],lib=as.matrix(segs),pred=as.matrix(segs),lib_column="mac",target_column="mei.mean",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=10)),random_libs=T,silent=T)
+mac_xmap_mei <- ccm(CCM.block.phys,E=bestE["mei.mean"],lib=rnd_lib_segs,pred=rnd_pred_segs,lib_column="mac",target_column="mei.mean",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),silent=T)
 
-mei_xmap_mac <- ccm(CCM.block.phys,E=bestE["mei.mean"],lib=as.matrix(segs),pred=as.matrix(segs),lib_column = "mei.mean", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=10)),random_libs=T,silent=T)
+mei_xmap_mac <- ccm(CCM.block.phys,E=bestE["mac"],lib=rnd_lib_segs,pred=rnd_pred_segs,lib_column = "mei.mean", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),silent=T)
 
 # To plot, we need to find means and sd's for each library size
 mac_xmap_mei_means <- mac_xmap_mei %>% 
@@ -560,8 +566,9 @@ mac_x_mei_plot <- ggplot()+
   geom_ribbon(data=mei_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="MEI xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap MEI","MEI xmap Macrocystis"),values=c("blue","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap MEI","MEI xmap Macrocystis"),values=c("blue","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.5) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1),panel.background=element_rect(fill="white",color="black"))+
+  ylim(-0.05,0.7) +
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ggtitle("Macrocystis and MEI Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
@@ -573,9 +580,9 @@ And the other physical variables:
 
 ```{r ccm mac phys,echo=F}
 ### PDO ###
-mac_xmap_pdo <- ccm(CCM.block.phys,E=bestE["mac"],lib_column="mac",target_column="pdo.mean",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+mac_xmap_pdo <- ccm(CCM.block.phys,E=bestE["pdo.mean"],lib_column="mac",target_column="pdo.mean",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
-pdo_xmap_mac <- ccm(CCM.block.phys,E=bestE["pdo.mean"],lib_column = "pdo.mean", target_column = "mac",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+pdo_xmap_mac <- ccm(CCM.block.phys,E=bestE["mac"],lib_column = "pdo.mean", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
 mac_xmap_pdo_means <- mac_xmap_pdo %>% 
   group_by(lib_size) %>% 
@@ -590,9 +597,9 @@ pdo_xmap_mac_means <- pdo_xmap_mac %>%
   mutate_each(funs(cut_to_zero),-lib_size)
 
 ### NPGO ###
-mac_xmap_npgo <- ccm(CCM.block.phys,E=bestE["mac"],lib_column="mac",target_column="npgo.mean",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+mac_xmap_npgo <- ccm(CCM.block.phys,E=bestE["npgo.mean"],lib_column="mac",target_column="npgo.mean",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
-npgo_xmap_mac <- ccm(CCM.block.phys,E=bestE["npgo.mean"],lib_column = "npgo.mean", target_column = "mac",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+npgo_xmap_mac <- ccm(CCM.block.phys,E=bestE["mac"],lib_column = "npgo.mean", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
 mac_xmap_npgo_means <- mac_xmap_npgo %>% 
   group_by(lib_size) %>% 
@@ -607,9 +614,9 @@ npgo_xmap_mac_means <- npgo_xmap_mac %>%
   mutate_each(funs(cut_to_zero),-lib_size)
 
 ### Hs ###
-mac_xmap_waves <- ccm(CCM.block.phys,E=bestE["mac"],lib_column="mac",target_column="waves.max",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+mac_xmap_waves <- ccm(CCM.block.phys,E=bestE["waves.max"],lib_column="mac",target_column="waves.max",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
-waves_xmap_mac <- ccm(CCM.block.phys,E=bestE["waves.max"],lib_column = "waves.max", target_column = "mac",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+waves_xmap_mac <- ccm(CCM.block.phys,E=bestE["mac"],lib_column = "waves.max", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
 mac_xmap_waves_means <- mac_xmap_waves %>% 
   group_by(lib_size) %>% 
@@ -624,9 +631,9 @@ waves_xmap_mac_means <- waves_xmap_mac %>%
   mutate_each(funs(cut_to_zero),-lib_size)
 
 ### SST ###
-mac_xmap_sst <- ccm(CCM.block.phys,E=bestE["mac"],lib_column="mac",target_column="sst.mean",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+mac_xmap_sst <- ccm(CCM.block.phys,E=bestE["sst.mean"],lib_column="mac",target_column="sst.mean",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
-sst_xmap_mac <- ccm(CCM.block.phys,E=bestE["sst.mean"],lib_column = "sst.mean", target_column = "mac",lib_sizes=c(seq(5,70,by=5)),random_libs=T,silent=T)
+sst_xmap_mac <- ccm(CCM.block.phys,E=bestE["mac"],lib_column = "sst.mean", target_column = "mac",lib_sizes=c(seq(5,55,by=5),seq(55,1000,by=50)),lib=rnd_lib_segs,pred=rnd_pred_segs,random_libs=T,silent=T)
 
 mac_xmap_sst_means <- mac_xmap_sst %>% 
   group_by(lib_size) %>% 
@@ -648,8 +655,9 @@ mac_x_pdo_plot <- ggplot()+
   geom_ribbon(data=pdo_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="pdo xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap pdo","pdo xmap Macrocystis"),values=c("purple","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap pdo","pdo xmap Macrocystis"),values=c("purple","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.5) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1), panel.background=element_rect(fill="white",color="black"))+
+  ylim(-0.05,0.7) +
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ggtitle("Macrocystis and pdo Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
@@ -661,8 +669,9 @@ mac_x_npgo_plot <- ggplot()+
   geom_ribbon(data=npgo_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="npgo xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap npgo","npgo xmap Macrocystis"),values=c("orange","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap npgo","npgo xmap Macrocystis"),values=c("orange","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.5) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1), panel.background=element_rect(fill="white",color="black"))+
+  ylim(-0.05,0.7) +
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ggtitle("Macrocystis and npgo Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
@@ -674,8 +683,9 @@ mac_x_waves_plot <- ggplot()+
   geom_ribbon(data=waves_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="waves xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap waves","waves xmap Macrocystis"),values=c("blue","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap waves","waves xmap Macrocystis"),values=c("blue","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.5) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1), panel.background=element_rect(fill="white",color="black"))+
+  ylim(-0.05,0.7) +
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ggtitle("Macrocystis and waves Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
@@ -687,13 +697,15 @@ mac_x_sst_plot <- ggplot()+
   geom_ribbon(data=sst_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="sst xmap Macrocystis"),alpha=0.3)+
   scale_colour_manual(name=NULL, labels=c("Macrocystis xmap sst","sst xmap Macrocystis"),values=c("red","darkgreen"))+
   scale_fill_manual(name=NULL, labels=c("Macrocystis xmap sst","sst xmap Macrocystis"),values=c("red","darkgreen"))+
-  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1))+
-  ylim(-0.05,0.5) +
+  theme(legend.key = element_blank(),legend.justification=c(0,1), panel.background=element_rect(fill="white",color="black"),legend.position=c(0,1))+
+  ylim(-0.05,0.7) +
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
   ggtitle("Macrocystis and sst Cross Mapping")+
   xlab("Library size")+
   ylab(expression(paste("Cross-map skill, ",rho)))
 
 #******************************
+mac_x_mei_plot
 mac_x_pdo_plot
 mac_x_npgo_plot
 mac_x_waves_plot
@@ -716,6 +728,7 @@ for (i in 1:ncol) {
         }
     }
 }
+rm(out_temp)
 
 ## we can also compare to a simple cross-correlation, allowing up to plus or minus 3 periods lag (about 18 months)
 M_corr <- array(NA, dim = c(ncol, ncol), dimnames = list(colnames(phys.dat.norm[2:6]), 
@@ -730,43 +743,45 @@ for (i in 1:ncol) {
         }
     }
 }
+rm(cf_temp)
 M_rho
 M_corr
 
 ## SST and waves have very high cross-map skill and cross-correlation.  We want to reject the null hypothesis that 
 ```
-We can re-run the previous all-species cross-mapping to build physical variables into our causation web:
-
+We can re-run the previous all-species cross-mapping to build physical variables into our causation web.  For this exercise, we use the physical variables as predictors, but not predictees, since their values are the same across all of the spatial replicates.
 ```{r ccm all species and physical vars}
-ncol <- dim(CCM.block.phys)[2]-1
-col.names <- colnames(CCM.block.phys)[2:(ncol+1)]
-xmap_mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+n_col <- dim(CCM.block.phys)[2]-1
+n_row <- dim(CCM.block.phys)[2]-6
+col_names <- colnames(CCM.block.phys)[2:(n_col+1)]
+row_names <- colnames(CCM.block.phys)[2:(n_row+1)]
+xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
 
 ## CCM causation criterion 1: cross-map skill greater than zero
 # matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 
 # 1 minus the number of positive results for rho divided by the number of iterations)
-p1.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
 
 ## CCM causation criterion 2: evidence for convergence
 # similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).  If rho does not converge with library length, it may be a sign of synchrony.
-p2.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
 
 # if both p1 and p2 are positive, indicate overall significant causal signal
-ptot.mat <- array(NA,dim=c(ncol,ncol),dimnames=list(col.names,col.names))
+ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
 
 ## Run CCM for each combination of variables
-for(i in 1:ncol) {
-  for(j in 1:ncol) {
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
     if(i != j) {
-      # remember, we use the best embedding dimension for the library variable (the predicted variable, j)
-      tempE=bestE[col.names[j]]
-      temp <- ccm(CCM.block.phys,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column= 1+i,target_column = 1+j,lib_sizes = c(10,500),replace=T,silent=T)
+      # remember, we use the best embedding dimension for the library variable (the variable we're cross-mapping from, j)
+      tempE=bestE[col_names[j]]
+      temp <- ccm(CCM.block.phys,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column= 1+i,target_column = 1+j,lib_sizes = c(10,500,1000),replace=T,silent=T)
       # mean rho at library size 500
-      rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
+      rhomean <- temp %>% filter(lib_size==1000) %>% ccm_means()
       xmap_mat[i,j] <- rhomean$rho
       
       # first p-value (greater than zero? at largest library size)
-      p1 <- temp %>% filter(lib_size==500) %>% 
+      p1 <- temp %>% filter(lib_size==1000) %>% 
         mutate(pos=ifelse(rho>0,1,0)) %>%
         summarise(p=(1-sum(pos)/n()))
       p1.mat[i,j] <- as.numeric(p1)
@@ -780,6 +795,8 @@ for(i in 1:ncol) {
     }
   }
 }
+rm(tempE)
+rm(temp)
 
 ```
 
@@ -806,30 +823,46 @@ xmap_all_phys_plot
 #ggsave("xmap_all.png")
 ```
 
+The physical variables display varying degrees of cross-map skill. Interesting, the Multivariate El Nino Index significantly maps to only two biological variables, and very weakly.  Conversely, the North Pacific Gyre Oscillation index significantly predicts all of the biological variables. In terms of individual species, that cross-mapping of SST and signficant wave height is strong by *Parastichopus parvimensis*, the warty sea cucumber.  *Macrocystis pyrifera* significantly cross-maps all of the physical variables, but most strongly maps SST.
+
 ### 6. Multivariate CCM
 
 Given that these species are so interconnected, it may be that we could better predict dynamics by building composite attractors from multiple species' time series. Similar to the theory behind CCM, extensions of Takens' theorem provide the basis for multivariate state-space reconstruction.  Using the normalized time series as before, we'll build library vectors that include lagged coordinates of the variable we're trying to predict, as well as other variables illuminated by our CCM analysis.
 
-We do not want to just throw all variables into our multivariate reconstructions. Instead, we can add variables one by one, to see how much predictability they add to the overall model. To keep it simple for now, we'll focus on predicting the dynamics of *Macrocystis pyrifera*.
+We do not want to just throw all variables into our multivariate reconstructions. Instead, we can add variables one by one, to see how much predictability they add to the overall model. To keep it simple for now, we'll focus on predicting the dynamics of *Macrocystis pyrifera*, and the candidate variables will be all of the biological and physical variables, and their associated lagged versions, up to 2 lags (~1 year).
 
-We start with a univariate reconstruction (lagged versions of the same time series, just as in Section 3)
-```{r macro univariate prediction}
+We start with a univariate reconstruction (lagged versions of the same time series, just as in Section 3), and we get a similar prediction skill:
+```{r create multivariate block, echo=F}
 # Create a block of time series
 # Similar to the block used for CCM, but for multivariate embeddings we have to manually lag the variables
 multiblock <- dat.norm.block %>%
   group_by(site) %>%
-  # manual lags for macrocystis
-  mutate(mac.lag1=lag(mac,1),mac.lag2=lag(mac,2),mac.lag3=lag(mac,3),mac.lag4=lag(mac,4),mac.lag5=lag(mac,5)) %>%
-  # manual lags for pterogophora
-  mutate(pter.lag1=lag(pter,1),pter.lag2=lag(pter,2)) %>%
-  # manual lags for laminaria
-  mutate(lam.lag1=lag(lam,1),lam.lag2=lag(lam,2)) %>%
-  #purp
-  mutate(purp.lag1=lag(purp,1),purp.lag2=lag(purp,2)) %>%
+  # join physical variables
+  left_join(phys.dat.norm,by="period") %>%
+  # manual lags for each variable (up to lag 2)
+  mutate(mac.lag1=lag(mac,1),mac.lag2=lag(mac,2),
+         pat.lag1=lag(pat,1),pat.lag2=lag(pat,2),
+         red.lag1=lag(red,1),red.lag2=lag(red,2),
+         purp.lag1=lag(purp,1),purp.lag2=lag(purp,2),
+         wavy.lag1=lag(wavy,1),wavy.lag2=lag(wavy,2),
+         paras.lag1=lag(paras,1),paras.lag2=lag(paras,2),
+         pis.lag1=lag(pis,1),pis.lag2=lag(pis,2),
+         cys.lag1=lag(cys,1),cys.lag2=lag(cys,2),
+         lam.lag1=lag(lam,1),lam.lag2=lag(lam,2),
+         eis.lag1=lag(eis,1),eis.lag2=lag(eis,2),
+         pter.lag1=lag(pter,1),pter.lag2=lag(pter,2),
+         mei.mean.lag1=lag(mei.mean,1),mei.mean.lag2=lag(mei.mean,2),
+         pdo.mean.lag1=lag(pdo.mean,1),pdo.mean.lag2=lag(pdo.mean,2),
+         npgo.mean.lag1=lag(npgo.mean,1),npgo.mean.lag2=lag(npgo.mean,2),
+         waves.max.lag1=lag(waves.max,1),waves.max.lag2=lag(waves.max,2),
+         sst.mean.lag1=lag(sst.mean,1),sst.mean.lag2=lag(sst.mean,2)) %>%
   ungroup() %>%
   select(-site)
+```
 
-mac.univar <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("mac","mac.lag1","mac.lag2","mac.lag3","mac.lag4","mac.lag5"),target_column = "mac",stats_only = F,silent=T)
+The is what the relationship between observed and predicted values looks like for the optimal univariate reconstruction of *M. pyrifera*. The 1:1 line represnts what a perfect fit would look like, and the red best fit line shows the realized relationship. Overall forecast skill ($/rho$, the correlation between predictions and observations) is 0.577.
+```{r mac univariate, echo=F}
+mac.univar <- simplex(multiblock$mac,E=6,lib=rnd_lib_segs,pred=rnd_pred_segs,stats_only = F,silent=T)
 
 # We can plot observed vs. predicted values to see how well the univariate reconstruction did
 univar.out <- mac.univar[[1]]$model_output
@@ -839,25 +872,70 @@ univar.corr <- round(mac.univar[[1]]$stats$rho,3)
 
 par(mfrow=c(1,1),xpd=F)
 plot_range <- range(c(univar.out$obs, univar.out$pred), na.rm = TRUE)
-plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",xlim=plot_range,ylim=plot_range,cex=0.8,main=expression(paste("Univariate Embedding (E=6), ",rho,"=0.577")))
+plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",xlim=plot_range,ylim=plot_range,cex=0.8,main=expression(paste("Macrocystis Univariate Embedding (E=6), ",rho,"=0.577")))
 
 # "Perfect fit", 1:1 line
 abline(a=0,b=1,lty=2,col="gray40")
 # Best fit line
-abline(lm(univar.out$pred ~ univar.out$obs), col = "black", lty = 3, lwd = 2)
+abline(lm(univar.out$pred ~ univar.out$obs), col = "darkred", lty = 3, lwd = 2)
 ```
 
-Next, we'll add the variable that had the best cross-map predictability of *Macrocystis* dynamics: *Pterogophora*.
 
-The idea is the same, but we include the pterogophora time series as one more embedded dimension
+#### Model Selection for *Macrocystis*
+Now, we want to find the combination of variables that best describe *M. pyrifera* dynamics at SNI. However, we don't want to just haphazardly throw variables together. Instead, we'll use a forward selection procedure to determine which variables to include, by first finding the single variable that best predicts kelp dynamics (determined by $\rho$).
 
-```{r macro multi pter}
-mac.multi.pter <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("mac","mac.lag1","mac.lag2","pter","pter.lag1","pter.lag2"),target_column = "mac",stats_only = F,silent=T)
+```{r macro multi model selection}
+# A vector of all variables names (first column is period identifier)
+multi_vars <- colnames(multiblock)[2:ncol(multiblock)]
 
-mac.multi <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=c("lam","lam.lag1","lam.lag2","pter","pter.lag1","pter.lag2","purp","purp.lag1","purp.lag2"),target_column = "mac",stats_only = F,silent=T)
+# Vector to hold output rho's
+out.rho <- numeric(length(multi_vars))
+names(out.rho) <- multi_vars
 
-mac.multi.pter[[1]]$stats$rho
-
-mac.multi.purp[[1]]$stats$rho
-mac.multi[[1]]$stats$rho
+# Find the single variable that best predicts M. pyrifera dynamics (including the mac time series itself)
+for(i in 1:length(multi_vars)) {
+  temp_var <- multi_vars[i]
+  temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_var,target_column = "mac")
+  out.rho[i] <- temp$rho
+}
+out.rho <- data_frame(var=names(out.rho),rho=out.rho) %>% arrange(desc(rho))
+out.rho
+rm(temp_var,temp)
 ```
+
+All of the physical variables, and their lags, arise as the most predictive single variables for predicting *M. pyrifera* dynamics. Continuing with forward selection, we now find the next variable, after significant wave height (lag 1), that adds the most predictability (i.e., displays the largest improvement over the univariate forecast). We'll do this iteratively, and see where predicability stops signficantly improving.
+
+```{r forward selection}
+selected.vars <- data_frame(var=rep(NA,15),cum.rho=numeric(15))
+
+# We'll do 15 model selection steps, adding the most predictive variable each time
+for(i in 1:15) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(multi_vars,selected.vars$var)
+  # Vector to hold output rho's
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  
+  # Find the single variable that best predicts M. pyrifera dynamics (including the mac time series itself)
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+    
+    
+    temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_vars,target_column = "mac")
+    out.rho[j] <- temp$rho
+  }
+  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
+  selected.vars$cum.rho[i] <- max(out.rho)
+}
+
+# Plot results
+plot(1:15,selected.vars$cum.rho,type="l",main="Forward Model Selection for Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+```
+
+The model selection exercise peaks at nine variables. There are a lot of interesting observations from this exercise:
+
+* The best model has a skill of greater than 0.75 and consists of a reconstruction with four physical variables of two types (MEI/El Nino and significant wave height), and five biological variables from four species (the urchins *Strogylocentrotus fransciscanus* and *S. purpuratus*, wavy turban snail *Megastreaea undosa*, and the bat star *Patiria miniata*)
+* *Macrocystis pyrifera* itself does not show up as a signficant variable. The time series reconstructed with one lag of *M. pyrifera* was the last-selected variable, after the peak in predictive ability
+* The two first selected variables relate to significant wave height, confirming other findings. Together, wave dynamics and its first lag produce predictions with a correlation of >0.5 with observations.
+* Three of the top five selected variables are physical, but the other two are related to biological variables, specifically urchin dynamics. However, the selected urchin variables are lags, potentially suggesting that adult *M. pyrifera* dynamics are determined by urchin effects on younger life stages of *M. pyrifera* (e.g., recruitment and juvenile growth), rather than contemporaneous effects of urchins on adult kelps.
