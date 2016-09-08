@@ -92,7 +92,7 @@ plot(dat.norm.block$red,type="l",main="Red urchin time series",xlab="time",ylab=
 dat.norm.block <- dat.norm.block %>% filter(!grepl("7",site))
 ```
 
-### 3. Establishing univariate predictability and nonlinearity
+### 3. Establishing Univariate Predictability and Nonlinearity
 For each of these time series, we have a few steps to see if they seem appropriate to analyze together.  First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection (which will also give us an idea of the appropriate embedding dimension). Then, we look for nonlinear dynamics with S-maps.  Finally, we can determine cross-predictability across sites to make sure it is appropriate to use all the data together.
 
 First, let's use simplex projection to investigate each species' self predictability.
@@ -493,6 +493,7 @@ As with the other variables in our analysis, these physical variables have been 
 
 ```{r physical variable import}
 # Read in the variables
+phys.dat <- read.csv(paste0(W_D,"/data/phys_vars_combined.csv"))
 phys.dat.norm <- read.csv(paste0(W_D,"/data/phys_vars_combined_norm.csv"))
 
 # Combine with CCM block data, by period
@@ -797,12 +798,13 @@ for(i in 1:n_row) {
 }
 rm(tempE)
 rm(temp)
-
 ```
 
 Raster plot of output:
 ```{r CCM raster, echo=F}
-xmap_rast_with_phys <- as.data.frame(xmap_mat*ptot.mat) %>% 
+# keep only signficant cross-mappings
+xmap_mat <- xmap_mat*ptot.mat %>% as.data.frame()
+xmap_rast_with_phys <- xmap_mat %>% 
   mutate(predictee=row.names(xmap_mat)) %>% 
   gather(key=predictor,value=rho,cys:sst.mean) %>%
   arrange(desc(rho))
@@ -821,11 +823,19 @@ xmap_all_phys_plot <- ggplot(xmap_rast_with_phys,aes(x=predictor,y=predictee,fil
 
 xmap_all_phys_plot
 #ggsave("xmap_all.png")
+
+# list of significant variables for each species
+ccm.sig.vars<-list()
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  vars <- xmap_rast_with_phys %>% filter(predictee==spp,rho!=0)
+  ccm.sig.vars[[spp]] <- vars$predictor
+}
 ```
 
 The physical variables display varying degrees of cross-map skill. Interesting, the Multivariate El Nino Index significantly maps to only two biological variables, and very weakly.  Conversely, the North Pacific Gyre Oscillation index significantly predicts all of the biological variables. In terms of individual species, that cross-mapping of SST and signficant wave height is strong by *Parastichopus parvimensis*, the warty sea cucumber.  *Macrocystis pyrifera* significantly cross-maps all of the physical variables, but most strongly maps SST.
 
-### 6. Multivariate CCM
+### 6. Multivariate Models
 
 Given that these species are so interconnected, it may be that we could better predict dynamics by building composite attractors from multiple species' time series. Similar to the theory behind CCM, extensions of Takens' theorem provide the basis for multivariate state-space reconstruction.  Using the normalized time series as before, we'll build library vectors that include lagged coordinates of the variable we're trying to predict, as well as other variables illuminated by our CCM analysis.
 
@@ -860,7 +870,7 @@ multiblock <- dat.norm.block %>%
   select(-site)
 ```
 
-The is what the relationship between observed and predicted values looks like for the optimal univariate reconstruction of *M. pyrifera*. The 1:1 line represnts what a perfect fit would look like, and the red best fit line shows the realized relationship. Overall forecast skill ($/rho$, the correlation between predictions and observations) is 0.577.
+The is what the relationship between observed and predicted values looks like for the optimal univariate reconstruction of *M. pyrifera*. The 1:1 line represnts what a perfect fit would look like, and the red best fit line shows the realized relationship. Overall forecast skill ($\rho$, the correlation between predictions and observations) is 0.577.
 ```{r mac univariate, echo=F}
 mac.univar <- simplex(multiblock$mac,E=6,lib=rnd_lib_segs,pred=rnd_pred_segs,stats_only = F,silent=T)
 
@@ -886,56 +896,320 @@ Now, we want to find the combination of variables that best describe *M. pyrifer
 
 ```{r macro multi model selection}
 # A vector of all variables names (first column is period identifier)
-multi_vars <- colnames(multiblock)[2:ncol(multiblock)]
+# multi_vars <- colnames(multiblock)[2:17]
 
-# Vector to hold output rho's
+# potential variables are those that significantly cross-mapped from the previous step, plus mac itself
+multi_vars <- c(ccm.sig.vars[["mac"]],"mac")
+# Vector to hold output rho's and thetas
 out.rho <- numeric(length(multi_vars))
 names(out.rho) <- multi_vars
+out.theta <- numeric(length(multi_vars))
+names(out.theta) <- multi_vars
 
 # Find the single variable that best predicts M. pyrifera dynamics (including the mac time series itself)
+ptm <- proc.time()
 for(i in 1:length(multi_vars)) {
   temp_var <- multi_vars[i]
-  temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_var,target_column = "mac")
-  out.rho[i] <- temp$rho
+  temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_var,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6, 8),method="s-map")
+  out.rho[i] <- max(temp$rho,na.rm=T)
+  out.theta[i] <- temp$theta[temp$rho==max(temp$rho)]
 }
-out.rho <- data_frame(var=names(out.rho),rho=out.rho) %>% arrange(desc(rho))
+out.rho <- data_frame(var=names(out.rho),rho=out.rho,theta=out.theta) %>% arrange(desc(rho))
 out.rho
 rm(temp_var,temp)
+proc.time()-ptm
 ```
 
-All of the physical variables, and their lags, arise as the most predictive single variables for predicting *M. pyrifera* dynamics. Continuing with forward selection, we now find the next variable, after significant wave height (lag 1), that adds the most predictability (i.e., displays the largest improvement over the univariate forecast). We'll do this iteratively, and see where predicability stops signficantly improving.
+All of the physical variables, and their lags, arise as the most predictive single variables for predicting *M. pyrifera* dynamics. Continuing with forward selection, we now find the next variable, after significant wave height (lag 1), that adds the most predictability (i.e., displays the largest improvement over the univariate forecast). We'll do this iteratively, and see how many steps/variables to include before predicability stops improving with the addition of additional variables
+
+.
 
 ```{r forward selection}
-selected.vars <- data_frame(var=rep(NA,15),cum.rho=numeric(15))
+selected.vars <- data_frame(var=rep(NA,10),cum.rho=numeric(10),theta=numeric(10))
 
 # We'll do 15 model selection steps, adding the most predictive variable each time
-for(i in 1:15) {
+# timer
+ptm <- proc.time()
+for(i in 1:10) {
   # candidate variables are all those that have not yet been selected
   poss_vars <- setdiff(multi_vars,selected.vars$var)
   # Vector to hold output rho's
   out.rho <- numeric(length(poss_vars))
   names(out.rho) <- poss_vars
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
   
   # Find the single variable that best predicts M. pyrifera dynamics (including the mac time series itself)
   for(j in 1:length(poss_vars)) {
     # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
     temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
-    
-    
-    temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_vars,target_column = "mac")
-    out.rho[j] <- temp$rho
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6, 8),method="s-map",silent=T)
+  out.rho[j] <- max(temp$rho,na.rm=T)
+  out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
   }
   selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
   selected.vars$cum.rho[i] <- max(out.rho)
+  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
 }
+proc.time()-ptm
+selected.vars
 
 # Plot results
-plot(1:15,selected.vars$cum.rho,type="l",main="Forward Model Selection for Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+plot.new()
+par(mfrow=c(1,1))
+plot(1:10,selected.vars$cum.rho,type="l",main="Forward Model Selection for Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
 ```
 
-The model selection exercise peaks at nine variables. There are a lot of interesting observations from this exercise:
+The model selection exercise peaks in forecast skill with nine included variables. There are many interesting observations from this exercise:
 
 * The best model has a skill of greater than 0.75 and consists of a reconstruction with four physical variables of two types (MEI/El Nino and significant wave height), and five biological variables from four species (the urchins *Strogylocentrotus fransciscanus* and *S. purpuratus*, wavy turban snail *Megastreaea undosa*, and the bat star *Patiria miniata*)
 * *Macrocystis pyrifera* itself does not show up as a signficant variable. The time series reconstructed with one lag of *M. pyrifera* was the last-selected variable, after the peak in predictive ability
 * The two first selected variables relate to significant wave height, confirming other findings. Together, wave dynamics and its first lag produce predictions with a correlation of >0.5 with observations.
 * Three of the top five selected variables are physical, but the other two are related to biological variables, specifically urchin dynamics. However, the selected urchin variables are lags, potentially suggesting that adult *M. pyrifera* dynamics are determined by urchin effects on younger life stages of *M. pyrifera* (e.g., recruitment and juvenile growth), rather than contemporaneous effects of urchins on adult kelps.
+* The total number of unique variables (six, excluding lags) is the same as the best embedding dimension for modeling *M. pyrifera* using univariate simplex projection (see Step 3 above)
+
+We can see one illustration of model by comparing the best multivariate model with the best univariate model for *Macrocystis*.
+
+```{r univar vs multivar prediction mac}
+# Run best multivariate model for M. pyrifera, saving actual model output (option stats_only=F)
+mac.multi.vars <- selected.vars$var[1:2]
+mac.multi.mod <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.multi.vars,target_column = "mac",stats_only = F,method="s-map",theta=2)
+mac.multi.out <- mac.multi.mod[[1]]$model_output
+
+# Re-draw the univariate scatter
+par(mfrow=c(1,1),xpd=F)
+plot_range <- range(c(univar.out$obs, univar.out$pred), na.rm = TRUE)
+plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",col="darkred",xlim=plot_range,ylim=plot_range,pch=1,main=expression(paste("Best Univariate vs. Multivariate Model of Macrocystis Dynamics")))
+
+# Add best multivariate fit
+points(mac.multi.out$obs,mac.multi.out$pred,col="darkgreen",pch=2)
+# "Perfect fit", 1:1 line
+abline(a=0,b=1,lty=2,col="gray40")
+# Best fit line for univariate and multivariate models
+abline(lm(univar.out$pred ~ univar.out$obs), col = "darkred", lty = 3, lwd = 3)
+abline(lm(mac.multi.out$pred ~ mac.multi.out$obs),col="darkgreen", lty=3, lwd=3)
+
+# Legend
+legend("topleft",legend=c("best univariate model","best multivariate model","1:1 line"),col=c("darkred","darkgreen","gray40"),lty=c(3,3,2),lwd=c(3,3,2))
+```
+Again, the best nonlinear, multivariate model of *Macrocystis pyrifera* dynamics outperforms the best univariate model, and does not include *Macrocystis* itself as a predictor.
+
+#### Model Selection, All Species
+We can generalize the above analysis of *M. pyrifera* dynamics and find the best multivariate model for each of the species in our data. The model selection will follow the same procedure as the previous exercise: sequentially identifying the variables that most improve model skill.
+
+```{r multivariate model selection all species}
+# List to hold each model selection output
+multivar.models <- list()
+
+# Run model selection for each study species
+ptm<-proc.time()
+for(k in 1:length(study_spp)) {
+  spp <- study_spp[k]
+  var.lib <- c(ccm.sig.vars[[spp]],spp)
+  # We'll do a number of model selection steps (max 10), adding the most predictive variable each time
+  selection.steps <- min(10, length(var.lib))
+  
+  selected.vars <- data_frame(var=rep(NA,selection.steps),cum.rho=numeric(selection.steps),theta=numeric(selection.steps))
+
+
+  for(i in 1:selection.steps) {
+    # candidate variables are all those that have not yet been selected
+    poss_vars <- setdiff(var.lib,selected.vars$var)
+    # Vectors to hold output rho's and thetas
+    out.rho <- numeric(length(poss_vars))
+    names(out.rho) <- poss_vars
+    out.theta <- numeric(length(poss_vars))
+    names(out.theta) <- poss_vars
+    
+    for(j in 1:length(poss_vars)) {
+      # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+      temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+      
+      temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_vars,target_column = spp,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6, 8),num_neighbors=0,method="s-map",silent=T)
+      out.rho[j] <- max(temp$rho)
+      out.theta[j] <-  temp$theta[temp$rho==max(temp$rho)][1]
+    }
+    new.var <- names(out.rho)[out.rho==max(out.rho,na.rm=T)] %>% subset(!is.na(.))
+    selected.vars$var[i] <- new.var
+    selected.vars$cum.rho[i] <- out.rho[new.var]
+    selected.vars$theta[i] <- out.theta[new.var]
+  }
+  # Store results
+  multivar.models[[spp]] <- selected.vars
+}
+ptm-proc.time()
+```
+
+Here's the plots of the model selection exercise for each species.  We also include, for reference, a dashed line representing the skill of the best univariate model for each species.
+
+```{r model selection plots, echo=F}
+par(mfrow=c(2,2))
+
+for(i in 1:length(multivar.models)) {
+  rho <- multivar.models[[i]]$cum.rho
+  selection.steps <- nrow(multivar.models[[i]])
+  plot(1:selection.steps,rho,type="l",main=c("Forward Model Selection",study_spp[i]),xlab="Model Selection Step (= Number of Variables Included)",xlim=c(0,selection.steps),ylab=expression(paste("Model Predictive Skill, ",rho)),ylim=c(0.2,0.8),xaxs="i")
+  # Add line for best univariate model (from back in Step 3)
+  abline(h=max(simp.list[[i]]$rho),lty=2,col="gray40")
+}
+par(mfrow=c(1,1))
+```
+
+The best multivariate model for each species strictly and often greatly outperforms the best univariate (self-predicting) models, as evidenced by the difference between the solid and dotted lines in the above plots.  All multivariate models with the exception of the models for *Pisaster giganteus* and *Eisenia arborea* exceed a model skill ($/rho$) of 0.5.  Most models "saturate" with fewer than 10 included variables, or at least reach a point where each additional variable add very little predictive skill (i.e., additional dynamic information).
+
+We can also investigate the included variables in each of the models, and see what the common variables are across models. To do this, we have to decide on the best multivariate model for each species. For consistency and to avoid overfitting, we'll choose the model for each species >= 2 variables where the model skill ($\rho$) first reaches a local maximum (i.e., where the next added variable decreases $\rho$).
+
+```{r choose best multivar model}
+best.modls <- list()
+nvars <- data_frame(model=study_spp,nvar=NA) # number of variables included in each model
+
+for(i in 1:length(multivar.models)) {
+  modl <- multivar.models[[i]]$cum.rho[2:selection.steps]
+  # Find first local maximum
+  cutoff <- match(TRUE,diff(modl)<0) + 1
+  # Slice original model selection
+  best.modls[[i]] <- slice(multivar.models[[i]],1:cutoff)
+  nvars[i,'nvar'] <- cutoff
+}
+names(best.modls) <- names(multivar.models)
+
+```
+
+Now we can get a sense of the variables included in the models.
+
+```{r count vars}
+varlist <- data_frame(vars=unlist(lapply(best.modls,function(x) x$var),use.names = F))
+count.vars <- varlist %>% count(vars, sort=T)
+count.vars
+
+# number of bioligcal variables
+n_biol_vars <- sum(sapply(study_spp,function(x) grepl(x,count.vars$vars)))
+n_phys_vars <- nrow(count.vars)-n_biol_vars
+```
+
+Some results:
+
+* The 11 best models contain a total of 59 unique variables, of which 14 are physical variables, and 17 are biological variables. 
+* The models contain a median of 4 variables, with the maximum number of included variables being 11 (*Strongylocentrotus purpuratus* model).  
+* All 5 physical variables are represented in some form (lagged or not) in at least 3 of the 11 models.
+* All models include at least 2 physical variables, and each model contains a physical variable as the first-selected variable, except for the model for *Cystoseira osmundacea*
+* Four models contain only physical variables:
+  + *Patiria miniata*
+  + *Megastreaea undosa*
+  + *Parastichopus parvimensis*
+  + *Pisaster giganteus*
+* Four models include their own time series (past density): red,purp,cys,eis,
+* Seven models include other species' time series: red, purp,cys,lam,eis,pter,mac
+
+This is not the only way to do model selection, but is one of the least demanding computationally because of the large number of variables. Other potential options would be to force each model to include its own dynamics as part of the reconstruction (e.g., the model for *Macrocystis* would include its own time series), or to start with only the variables significantly cross-mapped in Step 5.
+
+### Real-Time Kelp Forest Interactions
+
+From the results of the cross-mapping and multivariate modeling exercises, it is clear that the algal and invertebrate species in this species interact with one another in nonlinear, complex, but potentially predictable ways. Now that we have a multivariate predictive model for each species' dynamics, we can look at these phenomena in more detail, and answer the questions:
+
+  * *Are interactions between species constant over time (in both direction and magnitude)?*
+  * *If not, are there predictable conditions under which we may expect a certain type of interaction (e.g., competition vs. facilitation)?*
+
+Examples of more species-specific questions include:
+
+  * *Can we distinguish between times of top-down vs. bottom-up forcing of Macrocystis dynamics?*
+  * *Do Eisenia arborea and Pterogophora californica, both understory kelps, always compete?*
+  * *What are the conditions under which the invertebrates compete vs. facilitate one another?*
+  
+The exploration of these questions will give us insight into a more mechanistic view of the nonlinear interactions in this dynamic system.
+
+For this exercise, we use S-maps to investigate the interactions strengths between physical variables and species, and species with one another, in real time. S-maps actually calculates sequential "Jacobian" community matrices (the local effect of each variable on every other variable) at each time step in the analysis. By explicitly recording these, we can reveal how species interactions are changing over time. The logic and calculations behind this are described in Sugihara (1994) and Deyle et al. (2016).
+
+As before, we begin with a simplified model as a proof of concept. We'll look at the interactions affecting red urchins, *Strongylocentrotus fransciscanus*. The best forward-selected multivariate model for *S. fransciscanus* from the previous Step contained 7 variables of 5 unique types: sea surface temperature, red urchin density (i.e., its own time series), wavy turban snail density, the North Pacific Gyre Oscillation Index, and the Pacific Decadal Oscillation index. Here we use the seven-dimensional embedding from the best model to fit s_map coefficients.
+
+```{r red urchin interactions}
+# Start simple
+red.smap.full <- block_lnlp(multiblock,lib=as.matrix(segs),method="s-map",columns=best.modls[['red']]$var,target_column = "red",theta=best.modls[['red']]$theta[2],save_smap_coefficients = TRUE,num_neighbors = 0)
+red.smap.full <-red.smap.full[[1]]
+red.obs <- red.smap.full$model_output
+red.coeffs <- red.smap.full$smap_coefficients
+
+# Plot of model output for one set of data
+par(mfrow=c(1,1))
+plot(red.obs$time[820:882],red.obs$obs[820:882],type="l",main="Red Urchin Density",xlab="Period",ylab="Density (Standardized)", xaxs="i",col="black")
+lines(red.obs$time[819:881],red.obs$pred[820:882],col="darkred",lty=2)
+```
+
+backwards selection, macrocystis
+
+```{r mac model back selection}
+ptm <- proc.time()
+mac.back.vars <- names(multiblock[2:17])
+
+mac.back.mod <- data_frame(ex.var=character(16),rho=numeric(16),theta=numeric(16))
+mac.full <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.back.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+
+mac.back.mod$ex.var[1] <- "none"
+mac.back.mod$rho[1] <- max(mac.full$rho,na.rm=T)
+mac.back.mod$theta[1] <- mac.full$theta[mac.full$rho==max(mac.full$rho,na.rm=T)]
+
+
+for(i in 2:16) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(mac.back.vars,mac.back.mod$ex.var)
+  # Vectors to hold output rho's and thetas
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
+  
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we remove one variable at a time
+    temp_vars <- poss_vars[-j]
+    
+    temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+    out.rho[j] <- max(temp$rho)
+    out.theta[j] <-  temp$theta[temp$rho==max(temp$rho)][1]
+  }
+  ex.var <- names(out.rho)[out.rho==max(out.rho,na.rm=T)] %>% subset(!is.na(.))
+  mac.back.mod$ex.var[i] <- ex.var
+  mac.back.mod$rho[i] <- out.rho[ex.var]
+  mac.back.mod$theta[i] <- out.theta[ex.var]
+}
+
+proc.time()-ptm
+
+plot(1:16,mac.back.mod$rho,main="Macrocystis Backwards Model Selection",xlab="Variables Excluded",ylab="Model Predictive Skill",type="l")
+```
+
+With this model, we can explore the dynamics of interactions
+
+```{r mac dynamic interactions}
+# We save s-map coefficients, and choose the theta corresponding to the best selected model
+dyn.vars <- c(mac.back.mod$ex.var[6:16],"sst.mean")
+
+mac.dyn <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=dyn.vars,target_column = "mac",theta = 4, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)[[1]]
+
+mac.dyn$stats
+
+dyn.coeffs <- mac.dyn$smap_coefficients %>% as.data.frame()
+names(dyn.coeffs) <- c(dyn.vars,"constant")
+dyn.pred <- mac.dyn$model_output
+
+# Average effects of each interactions
+mean.na <- function(x) mean(x,na.rm=T)
+var.na <- function(x) var(x,na.rm=T)
+dyn.coef.long <- dyn.coeffs %>% gather(key=effect,value=value,na.rm=T) %>%
+  group_by(effect)
+
+# Plot of density/value vs. interactive effect for all covariates
+ggplot(dyn.coef.long,aes(x=value)) +
+  geom_histogram(aes(y=..density..),bins=10) +
+  theme_minimal() +
+  xlab("Interaction Strength") +
+  ylab("Frequency")+
+  geom_vline(xintercept=0,linetype=2)+
+  ggtitle("Effects of Variables on Macrocystis Dynamics")+
+  facet_wrap(~effect)
+
+#Predicted vs. Observed
+plot(dyn.pred$obs,dyn.pred$pred, main="Observed vs. Predicted, Macrocystis Multivariate Model",xlab="Observed",ylab="Predicted")
+abline(a=0,b=1,lty=2,col="gray40")
+abline(lm(dyn.pred$pred~dyn.pred$obs),lty=1,col="darkgreen")
+
+```
