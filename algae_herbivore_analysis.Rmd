@@ -1139,9 +1139,11 @@ backwards selection, macrocystis
 
 ```{r mac model back selection}
 ptm <- proc.time()
-mac.back.vars <- names(multiblock[2:17])
+mac.back.vars <- c(ccm.sig.vars[["mac"]],"mac")
 
-mac.back.mod <- data_frame(ex.var=character(16),rho=numeric(16),theta=numeric(16))
+nsteps <- length(mac.back.vars)
+
+mac.back.mod <- data_frame(ex.var=character(nsteps),rho=numeric(nsteps),theta=numeric(nsteps))
 mac.full <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.back.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
 
 mac.back.mod$ex.var[1] <- "none"
@@ -1149,7 +1151,7 @@ mac.back.mod$rho[1] <- max(mac.full$rho,na.rm=T)
 mac.back.mod$theta[1] <- mac.full$theta[mac.full$rho==max(mac.full$rho,na.rm=T)]
 
 
-for(i in 2:16) {
+for(i in 2:nsteps) {
   # candidate variables are all those that have not yet been selected
   poss_vars <- setdiff(mac.back.vars,mac.back.mod$ex.var)
   # Vectors to hold output rho's and thetas
@@ -1162,7 +1164,7 @@ for(i in 2:16) {
     # For each iteration, we remove one variable at a time
     temp_vars <- poss_vars[-j]
     
-    temp <- block_lnlp(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,columns=temp_vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
     out.rho[j] <- max(temp$rho)
     out.theta[j] <-  temp$theta[temp$rho==max(temp$rho)][1]
   }
@@ -1174,14 +1176,14 @@ for(i in 2:16) {
 
 proc.time()-ptm
 
-plot(1:16,mac.back.mod$rho,main="Macrocystis Backwards Model Selection",xlab="Variables Excluded",ylab="Model Predictive Skill",type="l")
+plot(1:nsteps,mac.back.mod$rho,main="Macrocystis Backwards Model Selection",xlab="Variables Excluded",ylab="Model Predictive Skill",type="l")
 ```
 
 With this model, we can explore the dynamics of interactions
 
 ```{r mac dynamic interactions}
 # We save s-map coefficients, and choose the theta corresponding to the best selected model
-dyn.vars <- c(mac.back.mod$ex.var[6:16],"sst.mean")
+dyn.vars <- c(mac.back.mod$ex.var[6:13],"sst.mean")
 
 mac.dyn <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=dyn.vars,target_column = "mac",theta = 4, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)[[1]]
 
@@ -1206,6 +1208,9 @@ ggplot(dyn.coef.long,aes(x=value)) +
   geom_vline(xintercept=0,linetype=2)+
   ggtitle("Effects of Variables on Macrocystis Dynamics")+
   facet_wrap(~effect)
+
+ggplot(dyn.coef.long,aes(x=effect,y=value,fill=effect))+
+  geom_boxplot()
 
 #Predicted vs. Observed
 plot(dyn.pred$obs,dyn.pred$pred, main="Observed vs. Predicted, Macrocystis Multivariate Model",xlab="Observed",ylab="Predicted")

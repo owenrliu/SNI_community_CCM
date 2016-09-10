@@ -12,3 +12,5 @@ The model selection exercise peaks at nine variables. There are a lot of interes
 * Three of the top five selected variables are physical, but the other two are related to biological variables, specifically urchin dynamics. However, the selected urchin variables are lags, potentially suggesting that adult *M. pyrifera* dynamics are determined by urchin effects on younger life stages of *M. pyrifera* (e.g., recruitment and juvenile growth), rather than contemporaneous effects of urchins on adult kelps.
 
 The best multivariate models for each species strictly and often greatly outperform the best univariate (self-predicting) models.  All multivariate models with the exception of the model for *Pisaster giganteus* exceed a model skill ($\rho$) of 0.5.
+
+$t_p$

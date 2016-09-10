@@ -1,0 +1,601 @@
+---
+title: "SNI_Multivariate_Modeling"
+author: "Owen Liu"
+date: "September 9, 2016"
+output: html_document
+---
+
+## An Empirical Dynamic Exploration
+
+### 1. Introduction
+This project will use data from a long-term monitoring project at San Nicolas Island to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive and predatory/herbivorous interactions in real time across the timeframe of the dataset.  The species we will look at are:
+
+* Brown algaes:
+  + *Macrocystis pyrifera*, giant kelp (adult)
+  + *Macrocystis pyrifera*, giant kelp (juveniles)
+  + *Laminaria* species (combined)
+  + *Cystoseira osmundacea*
+  + *Pterogophora californica*
+  + *Eisenia arborea*, southern sea palm
+
+* Echinoderms
+  + *Strongylocentrotus purpuratus*, purple sea urchin
+  + *S. franciscanus*, red sea urchin
+  + *Patiria miniata*, bat star
+  + *Pisaster giganteus*, giant sea star
+  + *Parastichopus parvimensis*, warty sea cucumber
+
+* Gastropods
+  + *Megastraea undosa*, wavy turban snail
+  
+```{r setup, message=F}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(rEDM)
+library(reshape2)
+
+#### Data ####
+# The raw data has been processed into a set of normalized time series elsewhere.
+W_D <- getwd()
+dat.long <- read.csv(paste0(W_D,"/data/benth_data_trim_normalized2016-09-09.csv"))
+
+# our particular species of interest
+study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter","mac","ymac")
+```
+
+As an initial step, we also import a species name key, mostly for reference and plot labeling later
+```{r species key}
+# Species Key for all benthic density species (for reference)
+#*************************************
+spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
+spp.key.bdens <- spp.key %>% 
+  filter(DataSet=="Benthic density") %>%
+  select(-SpeciesCode) %>%
+  rename(dataset=DataSet, long=SpeciesName)
+
+# better names
+spp.key.bdens$short <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
+# ************************************
+
+# quick function to turn a "genus species" into an abbreviated gen.spe identifier
+abbr.species.names <- function(x) {
+    temp <- strsplit(x," ")[[1]]
+    g <- substr(temp[1],1,3)
+    spe <- substr(temp[2],1,3)
+    paste(g,spe,sep=".")
+}
+
+spp.key.bdens$plotting <- sapply(spp.key.bdens$long,abbr.species.names)
+# identify kelp juveniles as separate variable
+spp.key.bdens$plotting[spp.key.bdens$long=="Macrocystis pyrifera <1m"] <- "Mac.pyr(j)"
+```
+
+These next lines produce a block (wide-form) dataset.  Keep in mind, these data are from multiple transects across multiple sites on the small islands. Empirical dynamic modeling can use multiple spatial replicates to produce increased predictability by concatenating them into one long time series. We preserve a time indicator (variable 'period') to ensure that we do not "cross" the boundaries of replicate time series in following analyses.
+
+```{r block data}
+# Cast to wide form
+#*************************************
+benthdat.block <- dat.long %>%
+  select(-dens) %>%
+  spread(key=spp,value=norm) %>%
+  arrange(site)
+#*************************************
+```
+
+### 2. Adding Physical Variables
+
+We'll also want to investigate where physical forcing fits into our dynamic story. A body of other research has established that a combination of physical forcing (waves, storms), temperature, and lower frequency climate modes (e.g., El Ninos) have an important influence on the dynamics of kelp forests. With these data, we can draw connections between the physical variables and not just *Macrocystis* dynamics, but all of the species in our constrained trophic web.
+
+We have four datasets, already processed into the same time frame (periods) as the SNI benthic monitoring data (with separate code not included here):
+
+* The Multivariate ENSO index (MEI)
+  + The first principal component of a composite set of physical parameters
+  + positive values of the MEI index are generally associated with El Nino conditions, decreases in wind-driven upwelling, warmer surface waters and nutrient-poor conditions
+  + from NOAA, http://www.esrl.noaa.gov/psd/enso/mei
+  + Variable here is the average index value for the four months preceding each Spring or Fall monitoring period (i.e., December to March or June to September, respectively)
+* The Pacific Decadal Oscillation index (PDO)
+  + Leading empirical orthogonal function (EOF) of monthly sea surface temperature anomalies (SST-A) over the North Pacific (poleward of 20° N) after the global average sea surface temperature has been removed
+  + positive PDO values indicate warmer SST, and nutrient-poor conditions along the western coast of the contiguous United States
+  + obtained from http://research.jisao.washington.edu/pdo/
+  + Aggregated and averaged the same way as MEI
+* The North Pacific Gyre Oscillation (NPGO)
+  + from Di Lorenzo, 2008, http://www.o3d.org/npgo/
+  + climate pattern that emerges as the 2nd dominant mode of sea surface height variability (2nd EOF SSH) in the Northeast Pacific
+  + better correlated with salinity, nutrients, and chlorophyll than PDO
+  + Aggregated and averaged the same way as MEI and PDO
+* Sea surface temperature (SST)
+  + Sea surface temperature data from Begg Rock and San Nicolas Island buoys, from the Coastal Data Information Program (CDIP), cdip.ucsd.edu
+  + Incomplete data
+  + Similar to the above, value is an average SST for the four months preceding each period
+* Maximum significant wave height (Hs)
+  + Also from the Begg and SNI buoys and the CDIP
+  + Signficant wave height is defined as the average height, in meters, of the one third highest waves in the record
+  + Instead of an average, value here is the maximum significant wave height of the four months preceding each period. This is meant to capture any large storm events, as well as general level of physical disturbance
+  
+As with the other variables in our analysis, these physical variables have been normalized to zero mean and unit variance to facilitate comparison among variables and not distort state-space reconstructions. Unlike the biological data, where there are unique spatial replicates, the physical data have only one value for each monitoring period, and hence their values are replicated (copied) for each site to match the total length of the data.
+
+```{r physical variable import}
+# Read in the variables
+phys.dat <- read.csv(paste0(W_D,"/data/phys_vars_combined.csv"))
+phys.dat.norm <- read.csv(paste0(W_D,"/data/phys_vars_combined_norm.csv"))
+
+# Combine with benthic biological block data, by period
+multiblock <- benthdat.block %>% left_join(phys.dat.norm,by="period")
+
+phys.vars <- c("mei.mean","pdo.mean","npgo.mean","waves.max","sst.mean")
+
+# Add them to the an overall name key
+phys.vars.key <- data_frame(long=c("Multivariate ENSO Index","Pacific Decadal Oscillation","North Pacific Gyre Oscillation","Significant Wave Height","Sea Surface Temperature"),dataset="Physical",short=phys.vars, plotting=c("(P) MEI","(P) PDO","(P) NPGO","(P) Max Hs","(P) SST"))
+
+fullkey <- bind_rows(spp.key.bdens,phys.vars.key)
+```
+
+### 3. Establishing Univariate Predictability and Nonlinearity
+For each of these time series, we have a few steps to see if they seem appropriate to analyze together with empirical dynamic modeling techniques.  In other words, we don't want to rely on simple cross-correlation or the prior knowledge that all these data were collected at the same island at the same times. We want evidence that:
+
+* Variables can be probably embedded (i.e., they show evidence of limited system dimensionality)
+* Variables display state-dependent (nonlinear) dynamics, and therefore that nonlinear methods are appropriate for analysis of these data
+* Specific monitoring sites display dynamics that are predictable from other sites' dynamics, validating the approach of combining data
+
+First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection, which will also give us an idea of the appropriate embedding dimension. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine species' cross-predictability across sites.
+
+First, let's use simplex projection to investigate each species' self predictability.
+
+#### Simplex Projection and Embedding Dimensions
+
+```{r univariate simplex}
+# For all the steps in the univariate analyses, we need an indication of the breaks in the different sites, or concurrent time series.
+
+# This piece of code holds the row numbers of the first and last element of each time series, in order to avoid "crossing" time series in later analyses
+segs_sites <- multiblock %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+segs <- select(segs_sites,-site)
+
+# List to store output of simplex projection
+simp.list <- list()
+
+# Run simplex projection for each species, and plot output
+par(mfrow=c(2,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- multiblock %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(segs),E=2:15,silent=T)
+  simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Self-Forecast Skill, ",rho)))
+}
+
+rm(spp,dat,out)
+```
+
+We also need to run simplex projection for the physical variables, in order to establish their optimal embeddings. As a reminder, the physical variables are the same across all biological spatial replicates. Since we are not interested in "predicting" the physical variables per se, but only in optimizing thier prediction of other variables, we do not run prediction horizon or S-map tests for them.
+
+```{r simplex physical variables}
+# Run simplex for each physical variable
+par(mfrow=c(2,2))
+for(i in 1:length(phys.vars)) {
+  ind <- phys.vars[i]
+  dat <- multiblock %>% select(matches(ind))
+  out <- simplex(as.numeric(dat[,1]),lib=c(1,63),E=2:10,silent=T)
+  simp.list[[ind]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(ind,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Self-Forecast Skill, ",rho)))
+}
+
+
+rm(ind,dat,out)
+```
+
+For each variable, we save its optimal embedding dimension. For a couple of individual variables, we manually choose a smaller embedding dimension than the absolute maximum found in the previous step, to avoid unnecessary model complexity, and reduce overfitting, while maintaining predictive power.
+```{r best E}
+bestE <- sapply(simp.list,function(x) x$E[x$rho==max(x$rho)])
+
+```
+
+#### Prediction Decay
+We can also look at prediction decay, another important property of deterministic chaos. This makes sure that nearby trajectories eventually diverge over time (the "butterfly effect"). Helps in distinguishing nonlinear systems from equilibrium-type systems. We want to see prediction decline over time horizon. For this simplex projection, we hold E (the embedding dimension) constant, and vary the prediction horizon, $t_p$
+
+```{r prediction horizon}
+# Find best embedding dimension from previous step
+tp.list <- list()
+
+par(mfrow=c(2,2))
+plot.new()
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- multiblock %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(segs),silent=T,E=bestE[i],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Self-Forecast Skill, ",rho)))
+}
+
+rm(spp,dat,out)
+```
+
+All of the variables show a decent ability to self-predict, as shown by simplex projection. Many variables are well-embedded in a low number of dimensions (6 or fewer). Some variables,however, require high embedding dimensions, which suggests quite complex dynamics. One variable, *Pisaster giganteus*, does not show a peak in predictability within our range of embedding dimensions, and displays relatively low predictability overall. Because of this, we remove *Pisaster* from any further analysis.
+
+```{r remove p giganteus}
+multiblock <- multiblock %>% select(-pis)
+study_spp <- setdiff(study_spp,"pis")
+```
+
+The prediction horizon effect check is promising overall, as most variables decline in predictive ability with increasing time horizon.
+
+#### Determining Nonlinearity with S-maps
+
+Next is to look for nonlinearity with S-maps. The S-maps procedure (see Sugihara, 1994, and Deyle et al., 2016) has a parameter, $\theta$, that can "tune" the projection algorithm to weight local state-space neighborhoods more highly, the implication being that if predictability improves with increased $\theta$, variables are better predicted by local neighborhoods rather than global linear models, indicating state-dependence or nonlinearity of dynamics.
+
+For prediction of each variable, we'll use the optimal embedding dimension found in the previous step.
+
+```{r univariate s_maps}
+smap.list <- list() # list to store output
+
+par(mfrow=c(2,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- multiblock %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(segs),E=bestE[i],silent=T)
+  smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")),ylab=expression(paste("Self-Predictive Ability ",rho)))
+}
+rm(spp,dat,out)
+```
+
+All variables show significantly improved predictive ability with increased theta, suggesting nonlinear dynamics, except for *Eisenia arborea*, which is best predicted by a "global" linear model across all state-space vectors.  Because of this and its low overall predictability by both simplex and S-map projection, we remove *Eisenia arborea* from further analyses.
+
+```{r remove eisenia}
+multiblock <- multiblock %>% select(-eis)
+study_spp <- setdiff(study_spp,"eis")
+```
+
+
+Together, the simplex and S-map results suggest our approach is valid--variables are predictable, and predictable best in a nonlinear manner.
+
+#### Cross-site Predictability for Individual Species
+Now we have to check to see if different sites have cross-predictability, to validate our choice to pool all of the data. To do this is a bit tricky. The data collected at San Nicolas Island is nested: transects within sites.  Here, we'll keep the individual transect time series within each site pooled, but test for predictability *between sites*.
+
+For each species, we'll use simplex projection, but unlike before, we set the "library" vectors (the lagged vectors used to construct a manifold) and "prediction" vectors (the lagged vectors used to test the predictive power of the embedding), to explicit match the 7 different sites and see how well they can cross-predict.  Because this is not necessarily a symmetrical process (e.g., for a given species, site 1 may predict the dynamics of site 2 better than site 2 can predict site 1), there will be 36 runs for each species (7 sites times 7 crosses per site, itself and the 5 other sites).  To make the output cleaner, we'll simply extract the best rho from each run, and ensure that it is significantly greater than zero.
+
+```{r data combination check}
+# For each individual simplex run, we use a subset of the block data, according to the original segments key:
+site_rows <- segs_sites %>% 
+  separate(site,into=c("site","transect"),sep="_") %>%
+  select(-transect) %>%
+  as.data.frame()
+
+# This is a list, each element holding an identifier of the subset time series (the transects) within each site.
+site_rows_list <- split(site_rows,site_rows$site)
+# Possible combinations of sites
+site.combinations <- expand.grid(1:7,1:7) %>% 
+  rename(libs=Var1,preds=Var2)
+
+# List to hold output of cross-checks
+dat.comb.check <- list()
+
+# Run the simplex projections
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- multiblock %>% select(matches(spp))
+  dat <- as.numeric(dat[,1])
+  out.mat <- matrix(nrow=7,ncol=7,dimnames=list(as.character(1:7),as.character(1:7)))
+  
+  # For each species, test each combination of sites
+  for(j in 1:nrow(site.combinations)) {
+    # Form a set of library and prediction vectors from different sites
+    lib <- site.combinations[j,1]
+    pred <- site.combinations[j,2]
+    
+    # Run the simplex model, pulling the correct library and prediction vectors from the list of site-specific time series
+    simp <- simplex(dat,lib=as.matrix(site_rows_list[[lib]][,2:3]),pred=as.matrix(site_rows_list[[pred]][,2:3]),silent=T)
+    
+    # Pull out the best predictive ability between the two sites. If all p-values (using Fisher's z) greater than 0.05, return NA
+    if(all(is.nan(simp$p_val))) {
+      out <- NA
+    }
+    else {
+      minp <- min(simp$p_val,na.rm=T)
+      maxrho <- max(simp$rho,na.rm=T)
+    }
+    if(minp>0.05) {
+      out <- NA
+    } else {
+      out <- maxrho
+    }
+    out.mat[lib,pred] <- out
+  }
+  
+  # For each species, return matrix of sites' cross-predictability
+  dat.comb.check[[spp]] <- out.mat
+}
+
+rm(spp,dat,out,out.mat,simp)
+```
+
+We can plot 6 by 6 raster-type grids for each species, displaying the results of this exercise.
+
+```{r site cross prediction plots, echo=F,message=F}
+# Create a raster for each species result from the previous step
+x_site_rast <- data_frame(species=character(),lib=character(),pred=character(),rho=numeric())
+
+for(i in 1:length(dat.comb.check)) {
+  spp <- names(dat.comb.check)[i]
+  
+  # Raster data for plotting
+  sppmat <- as.data.frame(dat.comb.check[[i]])
+  cross.rast <- sppmat %>% 
+    mutate(lib=row.names(sppmat)) %>% 
+    gather(key=pred,value=rho,1:7) %>%
+    arrange(desc(rho)) %>%
+    mutate(species=study_spp[i])
+  x_site_rast <- bind_rows(x_site_rast,cross.rast)
+}
+
+# Names for plotting to distinguish biological and physical variables
+x_site_rast <- x_site_rast %>% 
+  mutate(species=fullkey$plotting[match(species,fullkey$short)])
+
+# Plot
+x_predict_by_spp <- ggplot(x_site_rast,aes(x=lib,y=pred,fill=rho)) +
+  geom_raster() +
+  scale_fill_distiller(palette="Spectral",limits=c(0.1,0.9),name=expression(paste(rho, " (skill)"))) +
+  ggtitle(paste("Site Cross Predictability by Species")) +
+  xlab("Library Site") +
+  ylab("Forecasted Site")+
+  facet_wrap(~species)
+
+x_predict_by_spp
+ggsave("x_site_pred.png")
+
+rm(spp,sppmat,cross.rast)
+```
+
+As we can see from the plots, some sites are not predictable for some species (e.g. Site 7 for juvenile *Macrocystis*, or site 5 for the wavy turban snail *Megastraea undosa*).  Rows or columns that appear gray (NA, non-significant forecast skill) or very cool (blue-ish) in these plots indicate site pairs that have little or no cross-predictability for a given species. However, there are no sites which are universally unpredictable or useless as "library" sites across all species (although Site 7 is not very predictable for most species, and may be worth revisiting later).  For now, we can feel confident in using all the available data for these species.
+
+The next step will be to see if these species show signs of causative links.
+
+### 4. Determining Causation Between Species
+
+Generalizations of Takens' theorem indicate that if two variables (in our case, species) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence. In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to forecast another. If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, if A causes B, we should be able to recover the dynamics of A using a reconstruction of B. We say that the *causal effect of A on B is determined by how well B cross-maps A*.
+
+Cross-mapping can distinguish unidirectional forcing (A forces B but B doesn't force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C).  To look for a causal signal, we plot predictive skill against library size (the number of embedded vectors used to construct the attractor). There are two criteria for CCM to establish causality. First, and most obviously, predictive cross-map skill using all available data should be significantly greater than zero. Second, that predictability should be convergent.  Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and estimation error should decline.
+
+We can use this theory to build a causal network in our kelp forest algae/invertebrate system.
+
+CCM uses a random sampling method to test multiple "versions" of each library size, sampling from the supplied library vectors to give a sense of the confidence intervals around prediction skill. However, just like before, because we're using multiple, simultaneous time series, we have to indicate the breaks in those time series so the algorithm does not try to make predictions spanning multiple time series. Also, to be more conservative, we'll use only a random half of each time series for attractor reconstruction, and apply it to predicting the other half.
+
+```{r random time series segments}
+set.seed(413)
+# Sample one half of time series segments, without replacement
+rnd_lib_segs <- sample_frac(segs,0.5,replace=F) %>% arrange(first)
+# Use other half for prediction
+rnd_pred_segs <- anti_join(segs,rnd_lib_segs,by=c("first","last")) %>% arrange(first)
+
+rnd_lib_segs <- as.matrix(rnd_lib_segs)
+rnd_pred_segs <- as.matrix(rnd_pred_segs)
+```
+
+#### Initial CCM, *Macrocystis pyrifera*
+We can now apply CCM. Let's start simple, and see which invertebrates seem to have a causal influence on *Macrocystis pyrifera*, the giant kelp, and vice versa. We accomplish this by building a library with *Macrocystis* vectors, and cross-mapping the invertebrates. For example, we can see if there is a causal signal between *Macrocystis* and the two urchin species, red urchin *Strongylocentrotus franciscanus* and purple urchin *S. purpuratus*:
+
+```{r CCM macro, message=F}
+# zero cutoff function: if rho is less than zero, it doesn't make sense, so we'll set those values to zero for cleaner results
+cut_to_zero <- function(x) sapply(x, function(y) ifelse(y<0,0,y))
+
+## Macrocystis and red urchin
+#***************************************************
+mac_xmap_red <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "mac",target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),silent=T)
+
+red_xmap_mac <- ccm(multiblock, lib=as.matrix(rnd_lib_segs), pred=as.matrix(rnd_pred_segs), E=bestE["mac"],lib_column = "red", target_column = "mac", lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),silent=T)
+
+# To plot, we need to find means and sd's for each library size
+mac_xmap_red_means <- mac_xmap_red %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+
+red_xmap_mac_means <- red_xmap_mac %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+#****************************************************
+
+## Macrocystis and purple urchins
+#****************************************************
+mac_xmap_purp <- ccm(multiblock, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["purp"],lib_column = "mac", target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+
+purp_xmap_mac <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "purp",target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+
+# To plot, we need to find means and sd's for each library size
+mac_xmap_purp_means <- mac_xmap_purp %>% 
+  group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho)) %>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+
+purp_xmap_mac_means <- purp_xmap_mac %>% group_by(lib_size) %>% 
+  summarise(mean.rho=mean(rho), sd.rho=sd(rho))%>%
+  mutate(upper=mean.rho+sd.rho, lower=mean.rho-sd.rho) %>%
+  mutate_each(funs(cut_to_zero),-lib_size)
+```
+
+Here are the CCM plots of library size versus predictive skill for *Macrocystis* and red and purple urchins.
+```{r mac x red and purp plots, echo=F}
+mac_x_red_plot <- ggplot()+
+  geom_line(data=mac_xmap_red_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Red Urchin"))+
+  geom_ribbon(data=mac_xmap_red_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Macrocystis xmap Red Urchin"),alpha=0.3)+
+  geom_line(data=red_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Red Urchins xmap Macrocystis"))+
+  geom_ribbon(data=red_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Red Urchins xmap Macrocystis"),alpha=0.3)+
+  scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
+  scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Red Urchin","Red Urchins xmap Macrocystis"),values=c("darkred","darkgreen"))+
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1),
+        panel.background=element_rect(fill="white",color="black"))+
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
+  ylim(-0.05,0.5) +
+  ggtitle("Macrocystis and Red Urchin Cross Mapping")+
+  xlab("Library size")+
+  ylab(expression(paste("Cross-map skill, ",rho)))
+
+mac_x_purp_plot <- ggplot()+
+  geom_line(data=mac_xmap_purp_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap Purple Urchin"))+
+  geom_ribbon(data=mac_xmap_purp_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Macrocystis xmap purp Urchin"),alpha=0.3)+
+  geom_line(data=purp_xmap_mac_means,aes(x=lib_size,y=mean.rho,color="Purple Urchins xmap Macrocystis"))+
+  geom_ribbon(data=purp_xmap_mac_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Purple Urchins xmap Macrocystis"),alpha=0.3)+
+  scale_colour_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
+  scale_fill_manual(name=NULL, labels=c("Macrocystis xmap Purple Urchin","Purple Urchins xmap Macrocystis"),values=c("purple","darkgreen"))+
+  theme(legend.key = element_blank(),legend.justification=c(0,1), legend.position=c(0,1),
+        panel.background=element_rect(fill="white",color="black"))+
+  geom_hline(yintercept=0,linetype=2,color="gray40")+
+  ylim(-0.05,0.5) +
+  ggtitle("Macrocystis and Purple Urchin Cross Mapping")+
+  xlab("Library size")+
+  ylab(expression(paste("Cross-map skill, ",rho)))
+
+mac_x_red_plot
+mac_x_purp_plot
+```
+
+This initial look suggests that both urchin species affect, and are affected by, the giant kelp *Macrocystis pyrifera* (i.e., there is significant CCM in both directions). The causal coupling between purple urchins and *Macrocystis* may be stronger than between red urchins and *Macrocystis* For both cross-mappings, cross-map skill, while significantly greater than zero, is not particularly strong, suggesting there may be other important variables to consider.
+
+#### Cross-mapping All Species and Physical Variables
+Applying CCM in this way to all combinations of species in our data, we can build a "causal web", looking at the strength of cross-map skill between all species.  Importantly, as evidenced by the red urchin example above, CCM is non-symmetrical, and hence the cross-map of A on B is not the same as the cross-map of B on A.
+
+We include the physical variables as predictors in pairwise CCM, but not as predicted variables. Also, to be conservative, we impose the two criteria for CCM signficance described above (model skill greater than zero and convergence), and continue to use only a random half of time series for library and prediction sets.
+```{r ccm all species and physical vars}
+# Rows hold predicted variables, columns hold forcing variables
+n_col <- dim(multiblock)[2]-2
+n_row <- dim(multiblock)[2]-7
+col_names <- colnames(multiblock)[3:(n_col+2)]
+row_names <- colnames(multiblock)[3:(n_row+2)]
+xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).  If rho does not converge with library length, it may be a sign of synchrony.
+p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=bestE[col_names[j]]
+      temp <- ccm(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,500),num_samples=50,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
+      xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at largest library size)
+      p1 <- temp %>% filter(lib_size==500) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==500])$p.value
+      p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+rm(tempE,temp,rhomean,p1,p2)
+```
+
+Raster plot of output:
+```{r CCM raster, echo=F}
+# keep only signficant cross-mappings
+xmap_mat <- xmap_mat*ptot.mat %>% as.data.frame()
+xmap_rast <- xmap_mat %>% 
+  mutate(predictee=row.names(xmap_mat)) %>% 
+  gather(key=predictor,value=rho,cys:sst.mean)
+
+# If rho is zero, replace with NA (no significant causal signal)
+xmap_rast$rho[xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+xmap_rast <- xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+xmap_all_plot <- ggplot(xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_distiller(palette="Spectral",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+xmap_all_plot
+ggsave("xmap_all.png")
+
+# list of significant variables for each species
+ccm.sig.vars<-list()
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  vars <- xmap_rast %>% filter(predictee==spp,rho!=0)
+  ccm.sig.vars[[spp]] <- vars$predictor
+}
+
+rm(spp,vars)
+```
+
+From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The five physical forcing variables are represented in the first five columns. Many of them show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows predictive ability for all but one species.
+
+The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr") are it's own young (juvenile *Macrocystis*),sea surface temperature, purple sea urchin *Strongylocentrotus purpuratus*, and the warty sea cucumber *Parastichopus parvimensis*. The *Macrocystis*, in turn, displays a causal effect on purple urchins and the understory alga *Laminaria*, and to a lesser extent red urchins *S. franciscanus*, and the alga *Cystoseira osmundacea*.  
+
+Looking at the data from this exercise in another way, we can build an interaction web, and also see the number of links (causal or caused by) for each species (its network centrality).
+
+
+```{r causal web and interactions, echo=F}
+library(igraph) # Package for network graphing and analysis
+
+# Add NAs for connections in to physical variables (since we want them just to be exogenous)
+connect.mat <- t(ptot.mat) %>% as.data.frame() %>%
+  mutate(mei.mean=rep(NA,nrow(.)),pdo.mean=rep(NA,nrow(.)),npgo.mean=rep(NA,nrow(.)),waves.max=rep(NA,nrow(.)),sst.mean=rep(NA,nrow(.))) 
+
+g <- graph.adjacency(as.matrix(connect.mat))
+par(mfrow=c(1,1))
+
+# Variable names
+names <- sapply(V(g)$name, function(x) fullkey$plotting[match(x,fullkey$short)])
+names [11:15] <- c("MEI","PDO","NPGO","Max Hs","SST")
+
+V(g)$name <-names
+V(g)$label <- paste(sep="\n",V(g)$name, degree(g,mode="total"))
+
+# vector of node colors for plotting
+vert.cols <- c(rep("tan3",3),rep("orchid3",2),"tan3",rep("orchid3",2),"darkseagreen","tan3",rep("gray70",5))
+
+vert.lay <- cbind(c(346,199,270,499,477,196,403,369,422,283,190,262,302,97,463),
+                  c(52,168,112,227,123,84,179,114,58,200,246,281,0,136,284))
+
+plot(g,asp=0.8, vertex.label.color="black", vertex.label.cex=0.8, edge.arrow.size=0.6,vertex.label.font=2, vertex.size=25,edge.lty=2,edge.color="gray40",vertex.frame.color=F,vertex.color=vert.cols,main="Kelp Forest Causal Web",edge.curved=F,layout=vert.lay)
+
+legend(x=-1, y=-1, c("Brown Algae","Echinoderms", "Gastropods","Physical Forcing"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen","gray70"), pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+In this network, each node represents a variable, and the numbers associated with each are the number of connections in the web (both outgoing and incoming).  Although this is a busy network, it suggests two things to me, both of which agree with a lot of previous work:
+
+* Kelp forests are dynamically complex, with an intricate network of causal interactions between species
+* Macrocystis itself (a primary producer) is central to dynamics, having the most connections, followed by the two urchin species and the gastropod *Megastraea undosa*

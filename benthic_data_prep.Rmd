@@ -1,0 +1,150 @@
+---
+title: "benthic_data_prep"
+author: "Owen Liu"
+date: "September 9, 2016"
+output: html_document
+---
+## Preparation of Benthic Datasets
+
+The following code takes raw datasets of benthic cover and density from the San Nicolas Island monitoring program and processes them to be useful for empirical dynamic modeling (EDM).
+
+The first function imports all Benthic Cover and Benthic Density data, organizes it by period, fills in missing values with NA, and joins the two datasets together.
+
+```{r process raw data}
+# This function takes the raw benthic density and benthic cover data, edits the species names, fills in missing values to create complete timeseries, and joins the datasets into long form. Obviously requires the data to be in the correct folders relative to the working directory.
+
+process_raw_data <- function() {
+  # benthic species density
+  #**************************************
+  benthdens.dat <- read.csv(file=paste(W_D,'/data/Benthic density raw data.csv',sep=''))
+  #fix dates in the datasets to be more readable by R
+  betterDates <-function(dat) {
+    dates<-as.Date(as.character(dat$Date),format="%m/%d/%y")
+    return(dates)
+  }
+  benthdens.dat$Date <- betterDates(benthdens.dat)
+  #**************************************
+  
+  # benthic cover data
+  #**************************************
+  benthcover.dat <- read.csv(paste0(W_D,"/data/Benthic cover summary data.csv"))
+  benthcover.dat$Date <- betterDates(benthcover.dat)
+  
+  #*************************************
+  # Species Key
+  #*************************************
+  # All species, all surveys
+  spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F)   
+  spp.key.bdens <- spp.key %>% filter(DataSet=="Benthic density")
+  spp.key.bcov <- spp.key %>% filter(DataSet=="Benthic cover")
+  
+  # better shorthand names
+  spp.key.bdens$name <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
+  
+  # quick function to turn a "genus species" into an abbreviated gen.spe identifier
+  abbr.species.names <- function(x) {
+    temp <- strsplit(x," ")[[1]]
+    g <- substr(temp[1],1,3)
+    spe <- substr(temp[2],1,3)
+    paste(g,spe,sep=".")
+  }
+  
+  spp.key.bcov$name <- sapply(spp.key.bcov$SpeciesName,abbr.species.names)
+  #**************************************
+  
+  
+  # ***********************************
+  # Replace species code with species name and rename some variables
+  benthdensdat <- benthdens.dat %>%
+    rename(station=Station,period=Period,date=Date,swath=Swath,dens=Density) %>%
+    left_join(select(spp.key.bdens,SpeciesCode,name),by="SpeciesCode") %>%
+    
+    # remove unneeded columns
+    select(-SpeciesCode,-date) %>%
+    rename(spp=name) %>%
+    arrange(spp,period,swath) %>%
+    
+    # join station and swath columns into one unique 'site' identifier
+    unite(site,station,swath)
+  
+  # Same for benthic cover, which has slightly different original data structure
+  benthcovdat <- benthcover.dat %>%
+    rename(site=Station,period=Period,date=Date,dens=CoverMean) %>%
+    left_join(select(spp.key.bcov,SpeciesCode,name),by="SpeciesCode") %>%
+    
+    # remove unneeded columns
+    select(-SpeciesCode,-date,-Replicates,-CoverSE) %>%
+    rename(spp=name) %>%
+    arrange(spp,period)
+  
+  #*************************************
+  # There's one more problem, which is that there are some periods which were not sampled. It's better to make those values NAs in the data than just skipping over time periods.  This set of code expands the timeseries for each site/species to include NA density values for missing survey times.
+  
+  periods.all <- data_frame(period=1:63)
+  
+  # "Filling in" benthic data
+  sites <- sort(unique(benthdensdat$site))
+  spps <- sort(unique(benthdensdat$spp))
+  benthdensdat.full <- data_frame()
+  for(i in 1:length(sites)) {
+    for(j in 1:length(spps)) {
+      temp <- benthdensdat %>% filter(site==sites[i],spp==spps[j])
+      temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
+      benthdensdat.full <- bind_rows(benthdensdat.full,temp)
+    }
+  }
+  
+  # Filling in cover data
+  sites <- sort(unique(benthcovdat$site))
+  spps <- sort(unique(benthcovdat$spp))
+  benthcovdat.full <- data_frame()
+  for(i in 1:length(sites)) {
+    for(j in 1:length(spps)) {
+      temp <- benthcovdat %>% filter(site==sites[i],spp==spps[j])
+      temp <- full_join(periods.all,temp,by="period") %>% mutate(site=sites[i],spp=spps[j])
+      benthcovdat.full <- bind_rows(benthcovdat.full,temp)
+    }
+  }
+  rm(temp)
+  
+  #******************************
+  # As a last data setup step, we combine the two datasets into one, "longform" data
+  benthcovdat.full$site <- as.character(benthcovdat.full$site)
+  fulldat <- bind_rows(benthcovdat.full,benthdensdat.full)
+  
+  write.csv(fulldat,file=paste0(W_D,"/data/combined_processed_benthic_data.csv"))
+  return(fulldat)
+}
+```
+
+This second function takes the data from above, pulls out the given species' data (in shorthand form), and normalizes each time series to zero mean and unit variance before returning a usable set of data for EDM.
+
+```{r filter and normalize}
+# Requires a dataset from the function above, plus a character vector of species.
+filter_normalize_data <- function(fulldat,species) {
+  
+  # normalize the time series
+  #***********************************
+  dat.norm <- fulldat %>% filter(spp %in% species) %>%
+    group_by(spp,site) %>%
+    mutate(norm=(dens-mean(dens,na.rm=T))/sd(dens,na.rm=T)) %>%
+    ungroup() %>%
+    unique()
+  return(dat.norm)
+}
+```
+
+For multivariate EDM, for now (Sep 9, 2016), we'll use a small subset of species
+
+```{r produce dataset}
+W_D <- getwd()
+# Process raw data
+fulldat<-process_raw_data()
+
+#species of interest
+study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter","mac","ymac")
+
+dat.norm <- filter_normalize_data(fulldat,study_spp)
+
+write.csv(dat.norm,file=paste0(W_D,"/data/benth_data_trim_normalized",Sys.Date(),".csv"),row.names = F)
+```
