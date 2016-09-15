@@ -129,6 +129,19 @@ $(document).ready(function () {
 </ul>
 <p>The best multivariate models for each species strictly and often greatly outperform the best univariate (self-predicting) models. All multivariate models with the exception of the model for <em>Pisaster giganteus</em> exceed a model skill (<span class="math inline">\(\rho\)</span>) of 0.5.</p>
 <p><span class="math inline">\(t_p\)</span></p>
+<p>The model selection exercise peaks in forecast skill with nine included variables. There are many interesting observations from this exercise:</p>
+<ul>
+<li>The model selection itself displays a rapid rise in predictive skill with the first six or seven steps, followed by a long plateau, as seen in the plot above. This suggests that all of our candidate variables are potentially helpful predictors, as no addition of a variable significantly degrades predictive skill. This observation lends confidence to our choice of using CCM analysis to pick candidate variables.</li>
+<li>Moreover, the fact that after an intermediate number of included variables, the model stops significantly increasing in skill, indicates that some variables identified with CCM may constitute redundant dynamic information. This could occur because of CCM transitivity. For example, even though <em>Parastichopus parvimensis</em> significantly cross-mapped <em>Macrocystis</em>, its useful dynamic information may already be captured in the selected model through SST, NPGO, and young <em>Macrocystis</em>, all variables that mapped to <em>Parastichopus</em> in CCM. Therefore, including <em>Parastichopus</em> as well in the model does not increase model skill (but also does not degrade skill appreciably).</li>
+<li>The best model has a skill of greater than 0.7 and consists of a reconstruction with four physical variables, and five biological variables: two herbivores,the red urchin <em>Strogylocentrotus fransciscanus</em> and the wavy turban snail <em>Megastreaea undosa</em>; the alga <em>Cystoseira osmundacea</em>; and both <em>Macrocystis pyrifera</em> variables.</li>
+<li>The selection of these variables suggests, similarly to the CCM results, that both bottom-up and top-down ecological interactions are important for driving <em>Macrocystis</em> dynamics, as well as competition.</li>
+<li>The two top-selected physical variables are SST and the NPGO, both of which are generally associated with nutrient levels. Higher SST generally corresponds to lower levels of available nitrate (Zimmerman and Kremer 1984), while positive values of the NPGO correspond to increased upwelling and greater availability of nutrients (Di Lorenzo et al., 2008).</li>
+<li>The selection of both adult and young <em>Macrocystis</em> as helpful predictors is not surprising. Our prediction of kelp density should certainly be informed by the current density of adult and juvenile plants.</li>
+</ul>
+<p>We can see one illustration of model by comparing the best multivariate model with the best univariate model for <em>Macrocystis</em>.</p>
+<p>(<span class="math inline">\(\theta\)</span> parameter greater than zero)</p>
+<p>i.e., <span class="math inline">\(\delta mac/\delta var\)</span> is negative)</p>
+<pre class="r"><code>mac.full &lt;- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.back.vars,target_column = &quot;mac&quot;,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method=&quot;s-map&quot;,silent=T)</code></pre>
 
 
 

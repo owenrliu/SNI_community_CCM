@@ -14,3 +14,165 @@ The model selection exercise peaks at nine variables. There are a lot of interes
 The best multivariate models for each species strictly and often greatly outperform the best univariate (self-predicting) models.  All multivariate models with the exception of the model for *Pisaster giganteus* exceed a model skill ($\rho$) of 0.5.
 
 $t_p$
+
+The model selection exercise peaks in forecast skill with nine included variables. There are many interesting observations from this exercise:
+
+* The model selection itself displays a rapid rise in predictive skill with the first six or seven steps, followed by a long plateau, as seen in the plot above. This suggests that all of our candidate variables are potentially helpful predictors, as no addition of a variable significantly degrades predictive skill. This observation lends confidence to our choice of using CCM analysis to pick candidate variables.
+* Moreover, the fact that after an intermediate number of included variables, the model stops significantly increasing in skill, indicates that some variables identified with CCM may constitute redundant dynamic information. This could occur because of CCM transitivity. For example, even though *Parastichopus parvimensis* significantly cross-mapped *Macrocystis*, its useful dynamic information may already be captured in the selected model through SST, NPGO, and young *Macrocystis*, all variables that mapped to *Parastichopus* in CCM. Therefore, including *Parastichopus* as well in the model does not increase model skill (but also does not degrade skill appreciably). 
+* The best model has a skill of greater than 0.7 and consists of a reconstruction with four physical variables, and five biological variables: two herbivores,the red urchin *Strogylocentrotus fransciscanus* and the wavy turban snail *Megastreaea undosa*; the alga *Cystoseira osmundacea*; and both *Macrocystis pyrifera* variables.
+* The selection of these variables suggests, similarly to the CCM results, that both bottom-up and top-down ecological interactions are important for driving *Macrocystis* dynamics, as well as competition.
+* The two top-selected physical variables are SST and the NPGO, both of which are generally associated with nutrient levels.  Higher SST generally corresponds to lower levels of available nitrate (Zimmerman and Kremer 1984), while positive values of the NPGO correspond to increased upwelling and greater availability of nutrients (Di Lorenzo et al., 2008).
+* The selection of both adult and young *Macrocystis* as helpful predictors is not surprising. Our prediction of kelp density should certainly be informed by the current density of adult and juvenile plants.
+
+
+We can see one illustration of model by comparing the best multivariate model with the best univariate model for *Macrocystis*.
+
+($\theta$ parameter greater than zero)
+
+i.e., $\delta mac/\delta var$ is negative)
+
+```{r test code, eval=F}
+mac.full <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.back.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+```
+
+#### Macrocystis Adults and Juveniles
+Let's start with the first two specific questions above: Can we distinguish between top-down and bottom-up forcing of *Macrocystis* dynamics? What is the difference in forcing on adult and young *Macrocystis*?
+
+```{r run full multivariate models,eval=F}
+full.multi.modls <- list()
+
+# We run the s-map procedure again for each target, with the optimal variables included.
+# To record s-map coefficients, we set option save_smap_coefficients to TRUE.
+
+n_vars <- c(9,11,6,7) # The model size (# variables) in each of the four models
+opt_theta <- c(4,4,6,4) # Optimal theta from each model
+species <- c("mac","ymac","lam","purp")
+
+for (i in 1:4) {
+  spp <- species[i]
+  opt.vars <- best.modls[[i]]$var[1:n_vars[i]]
+  temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=opt.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  colnames(temp[[1]]$smap_coefficients) <- c(opt.vars,"const")
+  full.multi.modls[[spp]] <- temp[[1]]
+}
+```
+
+Now we have a dataset of species interactions and environmental influences at each predicted point for each modelled species. Let's first just look at the range of interaction signs and strengths for the adult *Macrocystis* model.
+
+```{r boxplot interactions mac,eval=F message=F}
+# Coefficients and model output
+mac.out <- full.multi.modls[['mac']]$model_output
+mac.coeffs <- full.multi.modls[['mac']]$smap_coefficients %>% as.data.frame()
+# Long form for ggplotting
+mac.coef.long <- full.multi.modls[['mac']]$smap_coefficients %>% 
+  as.data.frame() %>% 
+  gather(key=effect,value=value,na.rm=T) %>%
+  left_join(fullkey, by=c("effect"="short")) %>%
+  group_by(effect)
+
+# Boxplot by interacting variable
+multi.mac.box <- ggplot(mac.coef.long,aes(x=plotting,y=value,fill=effect))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle("Interactive Effects on Macrocystis Dynamics")+
+  guides(fill="none")
+multi.mac.box
+ggsave(plot=multi.mac.box,filename="mac_smap_coeffs_boxplot.png")
+```
+
+The boxplots show the interquartile range of each of the S-map (interaction) coefficients. Values less than zero represent negative marginal effects (i.e., $\delta mac/\delta var$ is negative). In general, these effects are what we might expect:
+
+* The bulk of the estimated coefficients for *Megastraea undosa*, *Strongylocentrotus fransciscanus*, and *Cystoseira osmundacea* are negative, indicative of herbivory and competitive interactions.
+* The effects of the *Macrocystis* itself are generally positive, although juvenile *Macrocystis* is sometime predicted to have a negative coefficient. The positive effect makes intuitive sense: the greater the density of *Macrocystis* in one place and time, the greater we'd expect it to be in the near future.
+* The effects of the physical variables are more interesting. The estimated coefficients for the El Nino Index (MEI) are approximately equally positive and negative, while the estimated coefficients for the three other variables are positive.
+
+Let's see if the effects on young *Macrocystis* look any different.
+
+```{r boxplot interactions young mac, eval=F,echo=F}
+# Coefficients and model output
+ymac.out <- full.multi.modls[['ymac']]$model_output
+ymac.out <- full.multi.modls[['ymac']]$smap_coefficients %>% as.data.frame()
+# Long form for ggplotting
+ymac.coef.long <- full.multi.modls[['ymac']]$smap_coefficients %>% 
+  as.data.frame() %>% 
+  gather(key=effect,value=value,na.rm=T) %>%
+  left_join(fullkey, by=c("effect"="short")) %>%
+  group_by(effect)
+
+# Boxplot by interacting variable
+multi.ymac.box <- ggplot(ymac.coef.long,aes(x=plotting,y=value,fill=effect))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle("Interactive Effects on Juvenile Macrocystis Dynamics")+
+  ylim(c(-3,3)) +
+  guides(fill="none")
+multi.ymac.box
+ggsave(plot=multi.ymac.box,filename="ymac_smap_coeffs_boxplot.png")
+```
+
+The S-map coefficients for young *Macrocystis* are somewhat different than the interaction identified for the adult kelp. The effects of *Cystoseira*, *Megastraea*, and red urchin *Strongylocentrotus fransciscanus* are negative, which might be expected based on competition for space (with *Cystoseira*) and herbivory. However, other effects are harder to explain. The bulk of estimated coefficients for purple urchin *S. purpuratus* are positive, which is non-intuitive since purple urchins are another herbivore known to eat young *Macrocystis*. Also surprising, the estimated coefficients of the North Pacific Gyre Oscillation and Sea Surface Temperature are primarily negative, which is opposite from those variables' effects on the adult *Macrocystis*.  The effects of  *Laminaria*, the physical variables MEI and PDO, and *Macrocystis* on itself are equivocal.
+
+So what about the question above??
+
+#### Laminaria: Dynamics of an Understory Kelp
+Now we investigate the estimates from the *Laminaria* model
+
+```{r boxplot interactions laminaria, message=F,eval=F,echo=F}
+# Coefficients and model output
+lam.out <- full.multi.modls[['lam']]$model_output
+lam.coeffs <- full.multi.modls[['lam']]$smap_coefficients %>% as.data.frame()
+# Long form for ggplotting
+lam.coef.long <- full.multi.modls[['lam']]$smap_coefficients %>% 
+  as.data.frame() %>% 
+  gather(key=effect,value=value,na.rm=T) %>%
+  left_join(fullkey, by=c("effect"="short")) %>%
+  group_by(effect)
+
+# Boxplot by interacting variable
+multi.lam.box <- ggplot(lam.coef.long,aes(x=plotting,y=value,fill=effect))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle("Interactive Effects on Laminaria Dynamics")+
+  ylim(c(-3,3)) +
+  guides(fill="none")
+multi.lam.box
+ggsave(plot=multi.lam.box,filename="lam_smap_coeffs_boxplot.png")
+```
+
+Besides the positive coefficients of the *Laminaria* itself, the other effects are generally smaller in magnitude than the effects identified for *Macrocystis*.  The effect on *Laminaria* of *Macrocystis* is generally negative, perhaps as a result of shading and competition for space, both well-documented effects. The median effects of the two herbivores are near zero, with the effect of *Megastraea* being slightly positive and the effect of *S. fransciscanus* being primarily negative. For the first time in these multivariate models, significant wave height is included as an important predictor of *Laminaria* dynamics, and this may be because of strong wave action's propensity to wipe out *Laminaria*'s competitors.  *Laminaria* often exists in a form with one long, strong, but flexible blade that allows the alga to lie prostrate on the bottom, and be resistant to wave action.  Finally, the effect of NPGO is somewhat variable, but often positive, being associated with higher nutrient availability.
+
+#### Purple Urchin: Dynamics of a Kelp Forest Herbivore
+
+Here is the summary of the estimated S-map coefficients for the purple urchin *Strongylocentrotus purpuratus*
+
+```{r boxplot interactions purple urchin,message=F,eval=F,echo=F}
+# Coefficients and model output
+purp.out <- full.multi.modls[['purp']]$model_output
+purp.coeffs <- full.multi.modls[['purp']]$smap_coefficients %>% as.data.frame()
+# Long form for ggplotting
+purp.coef.long <- full.multi.modls[['purp']]$smap_coefficients %>% 
+  as.data.frame() %>% 
+  gather(key=effect,value=value,na.rm=T) %>%
+  left_join(fullkey, by=c("effect"="short")) %>%
+  group_by(effect)
+
+# Boxplot by interacting variable
+multi.purp.box <- ggplot(purp.coef.long,aes(x=plotting,y=value,fill=effect))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle("Interactive Effects on Purple Urchin Dynamics")+
+  ylim(c(-3,3)) +
+  guides(fill="none")
+multi.purp.box
+ggsave(plot=multi.purp.box,filename="purp_smap_coeffs_boxplot.png")
+```

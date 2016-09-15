@@ -394,9 +394,9 @@ cut_to_zero <- function(x) sapply(x, function(y) ifelse(y<0,0,y))
 
 ## Macrocystis and red urchin
 #***************************************************
-mac_xmap_red <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "mac",target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),silent=T)
+mac_xmap_red <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["red"],lib_column = "mac",target_column = "red",lib_sizes = c(seq(5,55,by=2),seq(55,500,by=30)),silent=T)
 
-red_xmap_mac <- ccm(multiblock, lib=as.matrix(rnd_lib_segs), pred=as.matrix(rnd_pred_segs), E=bestE["mac"],lib_column = "red", target_column = "mac", lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),silent=T)
+red_xmap_mac <- ccm(multiblock, lib=as.matrix(rnd_lib_segs), pred=as.matrix(rnd_pred_segs), E=bestE["mac"],lib_column = "red", target_column = "mac", lib_sizes = c(seq(5,55,by=2),seq(55,500,by=30)),silent=T)
 
 # To plot, we need to find means and sd's for each library size
 mac_xmap_red_means <- mac_xmap_red %>% 
@@ -414,9 +414,9 @@ red_xmap_mac_means <- red_xmap_mac %>%
 
 ## Macrocystis and purple urchins
 #****************************************************
-mac_xmap_purp <- ccm(multiblock, lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["purp"],lib_column = "mac", target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+mac_xmap_purp <- ccm(multiblock, lib=as.matrix(segs),pred=as.matrix(segs),E=bestE["purp"],lib_column = "mac", target_column = "purp",lib_sizes = c(seq(5,55,by=2),seq(55,500,by=30)),first_column_time = T,silent=T)
 
-purp_xmap_mac <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "purp",target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,1000,by=50)),first_column_time = T,silent=T)
+purp_xmap_mac <- ccm(multiblock,lib=as.matrix(rnd_lib_segs),pred=as.matrix(rnd_pred_segs),E=bestE["mac"],lib_column = "purp",target_column = "mac",lib_sizes = c(seq(5,55,by=2),seq(55,500,by=30)),first_column_time = T,silent=T)
 
 # To plot, we need to find means and sd's for each library size
 mac_xmap_purp_means <- mac_xmap_purp %>% 
@@ -472,7 +472,7 @@ This initial look suggests that both urchin species affect, and are affected by,
 #### Cross-mapping All Species and Physical Variables
 Applying CCM in this way to all combinations of species in our data, we can build a "causal web", looking at the strength of cross-map skill between all species.  Importantly, as evidenced by the red urchin example above, CCM is non-symmetrical, and hence the cross-map of A on B is not the same as the cross-map of B on A.
 
-We include the physical variables as predictors in pairwise CCM, but not as predicted variables. Also, to be conservative, we impose the two criteria for CCM signficance described above (model skill greater than zero and convergence), and continue to use only a random half of time series for library and prediction sets.
+We include the physical variables as predictors in pairwise CCM, but not as predicted variables. Also, to be conservative, we impose the two criteria for CCM signficance described above (model skill greater than zero and convergence). We use leave-one-out cross-validation (predicting one lagged vector at a time) to determine model skill.
 ```{r ccm all species and physical vars}
 # Rows hold predicted variables, columns hold forcing variables
 n_col <- dim(multiblock)[2]-2
@@ -498,7 +498,7 @@ for(i in 1:n_row) {
     if(i != j) {
       # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
       tempE=bestE[col_names[j]]
-      temp <- ccm(multiblock,lib=rnd_lib_segs,pred=rnd_pred_segs,E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,500),num_samples=50,replace=T,silent=T)
+      temp <- ccm(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,500),num_samples=100,replace=T,silent=T)
       # mean rho at library size 500
       rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
       xmap_mat[i,j] <- rhomean$rho
@@ -518,7 +518,7 @@ for(i in 1:n_row) {
     }
   }
 }
-rm(tempE,temp,rhomean,p1,p2)
+rm(tempE,temp,rhomean)
 ```
 
 Raster plot of output:
@@ -547,7 +547,7 @@ xmap_all_plot <- ggplot(xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
   theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
 
 xmap_all_plot
-ggsave("xmap_all.png")
+#ggsave("xmap_all.png")
 
 # list of significant variables for each species
 ccm.sig.vars<-list()
@@ -560,9 +560,11 @@ for(i in 1:length(study_spp)) {
 rm(spp,vars)
 ```
 
-From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The five physical forcing variables are represented in the first five columns. Many of them show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows predictive ability for all but one species.
+From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The five physical forcing variables are represented in the first five columns, followed by the four brown algae variables, and then the invertebrates. Many of them show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows predictive ability for all species.
 
-The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr") are it's own young (juvenile *Macrocystis*),sea surface temperature, purple sea urchin *Strongylocentrotus purpuratus*, and the warty sea cucumber *Parastichopus parvimensis*. The *Macrocystis*, in turn, displays a causal effect on purple urchins and the understory alga *Laminaria*, and to a lesser extent red urchins *S. franciscanus*, and the alga *Cystoseira osmundacea*.  
+The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr") are it's own young (juvenile *Macrocystis*),the two understory kelps *Laminaria* and *Pterogophora californica*, sea surface temperature, and the warty sea cucumber *Parastichopus parvimensis*. The *Macrocystis*, in turn, displays a causal effect on *Laminaria*, another brown alga *Cystoseira osmundacea*, and purple urchin *Strongylocentrotus purpuratus*, and to a lesser extent red urchins *S. franciscanus*.
+
+*Laminaria* is cross-mapped well by almost all species in the dataset, providing evidence that it is an important driver of kelp forest dynamics at SNI, whether through potential competition (e.g., with other algaes), or potentially as an important food source for the herbivores.  We'll investigate these interactions in more detail below.
 
 Looking at the data from this exercise in another way, we can build an interaction web, and also see the number of links (causal or caused by) for each species (its network centrality).
 
@@ -581,8 +583,11 @@ par(mfrow=c(1,1))
 names <- sapply(V(g)$name, function(x) fullkey$plotting[match(x,fullkey$short)])
 names [11:15] <- c("MEI","PDO","NPGO","Max Hs","SST")
 
+# Vertex labels
 V(g)$name <-names
-V(g)$label <- paste(sep="\n",V(g)$name, degree(g,mode="total"))
+vert_in <- sapply(degree(g,mode="in"),function(x) paste0("(",x,")"))
+vert_out_in <- paste0(degree(g,mode="out"),vert_in)
+V(g)$label <- paste(sep="\n",V(g)$name, vert_out_in)
 
 # vector of node colors for plotting
 vert.cols <- c(rep("tan3",3),rep("orchid3",2),"tan3",rep("orchid3",2),"darkseagreen","tan3",rep("gray70",5))
@@ -595,7 +600,402 @@ plot(g,asp=0.8, vertex.label.color="black", vertex.label.cex=0.8, edge.arrow.siz
 legend(x=-1, y=-1, c("Brown Algae","Echinoderms", "Gastropods","Physical Forcing"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen","gray70"), pt.cex=2, cex=.8, bty="n", ncol=1)
 ```
 
-In this network, each node represents a variable, and the numbers associated with each are the number of connections in the web (both outgoing and incoming).  Although this is a busy network, it suggests two things to me, both of which agree with a lot of previous work:
+In this network, each node represents a variable, and the numbers associated with each are the number of connections in the web, outgoing and (incoming). The potential maximum incoming connections is 14 (15 total variables minus itself), and the maximum outgoing is 9 (subtracting the physical variables).  Although this is a busy network, it suggests two things to me, both of which agree with a lot of previous work:
 
-* Kelp forests are dynamically complex, with an intricate network of causal interactions between species
-* Macrocystis itself (a primary producer) is central to dynamics, having the most connections, followed by the two urchin species and the gastropod *Megastraea undosa*
+* Kelp forests are dynamically complex, with an intricate network of causal interactions between species. There are many bi-directional signals, and therefore not clear unidirectional causation. This is somewhat to be expected, as we would expect that, e.g., the algaes and herbivores would affect each other.
+* Macrocystis itself (a primary producer) is central to dynamics, having the most connections, followed by the two urchin species, the gastropod *Megastraea undosa*, and the understory kelps.
+
+Given that these species are so interconnected, it may be that we could better predict dynamics, or take a step towards a more mechanistic view of the interactions suggested from the CCM analysis, by building composite attractors from multiple species' time series. In other words, so far we have examined univariate embeddings to explore dimensionality and nonlinearity of individual variables, and then looked at pairwise predictability of species' dynamics. Informed by the outcomes of these univariate and cross-mapping analyses, we can explicitly examine multivariate models.
+
+This is our next task.
+
+### 5. Multivariate Models
+
+Similar to the theory behind CCM, extensions of Takens' theorem (Deyle et al., 2011) provide the basis for multivariate state-space reconstruction. In CCM, we usually use lagged vectors of one time series (e.g., kelp) to cross-map contemporaneous values of another time series (e.g., sea urchins). In the logic of CCM, if the attractor built from the lagged kelp time series can predict sea urchin dynamics, we can conclude that dynamic information from the urchin is encoded in the kelp, and that urchin dynamics force kelp dynamics.
+
+The multivariate embeddings consist of multivariate vectors instead of lagged univariate vectors. In a way, this makes sense. If a dynamic system is viewed as an attractor in multivariate space, then the different variables in the system "see" the attractor dynamics from different angles. Individual members (variables) encode univariate dynamic information as the system moves along the attractor, like shadows cast on one-dimensional planes. This is the whole logic behind state-space reconstruction: to reconstruct a facsimile of the true attractor and use it to predict the dynamics of individual variables. Accordingly, we should be able to reconstruct the attractor in a number of ways: through univariate methods (as in Step 3); by using lagged versions of another variable (as in CCM); or by using multiple other variables that we feel confident are members of the same dynamic system.
+
+Using the normalized time series, we'll build library vectors that each include the variable we're trying to predict, as well as other causal variables illuminated by our CCM analysis. Then we use S-maps to forecast the target variable using leave-one-out cross-validation.
+
+We do not want to just throw all variables into our multivariate reconstructions haphazardly, and risk over-fitting and excessive complexity. Instead, we can add variables one by one, to sequentially identify the most predictive variables. To start, we will focus on predicting the dynamics of *Macrocystis pyrifera*, both "adult" and "juvenile" plants, and the candidate variables for model selection will be those that were identified as causal in the CCM analysis (Step 4).
+
+#### Macrocystis Forward Model Selection
+
+```{r mac forward selection}
+
+# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
+multi_vars <- c(ccm.sig.vars[["mac"]],"mac")
+
+# Number of model selection steps to do
+n_steps <- length(multi_vars)
+
+selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
+
+# timer for the analysis
+ptm <- proc.time()
+for(i in 1:n_steps) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(multi_vars,selected.vars$var)
+  
+  # Vector to hold output rho's
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  # Vector to hold output S-map theta parameters
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
+  
+  # Find the single variable that best predicts Macrocystis dynamics one step ahead
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+    
+    # Run S-map with varying theta
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "mac",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
+    
+    # Best rho and theta from S-map analysis
+    out.rho[j] <- max(temp$rho,na.rm=T)
+    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
+  }
+  
+  # Select the variable that maximizes predictive skill
+  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
+  selected.vars$cum.rho[i] <- max(out.rho)
+  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
+}
+proc.time()-ptm
+selected.vars
+
+# Plot results
+plot.new()
+par(mfrow=c(1,1))
+plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+
+# Save the parameters from the best model
+best.modls <- list()
+best.modls[['mac']] <- selected.vars
+```
+
+The model selection exercise peaks in forecast skill with nine included variables. There are many interesting observations from this exercise:
+
+* The model selection itself displays a rapid rise in predictive skill with the first six or seven steps, followed by a long plateau, as seen in the plot above. This suggests that all of our candidate variables are potentially helpful predictors, as no addition of a variable significantly degrades predictive skill. This observation lends confidence to our choice of using CCM analysis to pick candidate variables.
+* Moreover, the fact that after an intermediate number of included variables, the model stops significantly increasing in skill, indicates that some variables identified with CCM may constitute redundant dynamic information. This could occur because of CCM transitivity. For example, even though *Parastichopus parvimensis* significantly cross-mapped *Macrocystis*, its useful dynamic information may already be captured in the selected model through SST, NPGO, and young *Macrocystis*, all variables that mapped to *Parastichopus* in CCM. Therefore, including *Parastichopus* as well in the model does not increase model skill (but also does not degrade skill appreciably). 
+* The best model has a skill of greater than 0.7 and consists of a reconstruction with four physical variables, and five biological variables: two herbivores,the red urchin *Strogylocentrotus fransciscanus* and the wavy turban snail *Megastreaea undosa*; the alga *Cystoseira osmundacea*; and both *Macrocystis pyrifera* variables.
+* Model selection of the optimal degree of nonlinearity ($\theta$ parameter greater than zero) maintains our earlier finding that *Macrocystis* dynamics are best understood as nonlinear and state-dependent.
+* The selection of these variables suggests, similarly to the CCM results, that both bottom-up and top-down ecological interactions are important for driving *Macrocystis* dynamics, as well as competition.
+* The two top-selected physical variables are SST and the NPGO, both of which are generally associated with nutrient levels.  Higher SST generally corresponds to lower levels of available nitrate (Zimmerman and Kremer 1984), while positive values of the NPGO correspond to increased upwelling and greater availability of nutrients (Di Lorenzo et al., 2008).
+* The selection of both adult and young *Macrocystis* as helpful predictors is not surprising. Our prediction of kelp density should certainly be informed by the current density of adult and juvenile plants.
+
+We can see one illustration of model skill by comparing the best multivariate model with the best univariate (i.e. using lags of the *Macrocystis* time series) model.
+
+```{r univar vs multivar prediction mac, echo=F}
+# Best univariate S-map model
+univar.mod <- s_map(multiblock$mac,lib=as.matrix(segs),E=6,theta=1.5,stats_only = F, silent=T)
+univar.out <- univar.mod[[1]]$model_output
+
+# Run best multivariate model for M. pyrifera, saving actual model output (option stats_only=F)
+mac.multi.vars <- selected.vars$var[1:9]
+mac.multi.mod <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.multi.vars,target_column = "mac",stats_only = F,method="s-map",theta=4,num_neighbors = 0)
+mac.multi.out <- mac.multi.mod[[1]]$model_output
+
+# Draw the scatterplot
+par(mfrow=c(1,1),xpd=F)
+plot_range <- range(c(univar.out$obs, univar.out$pred), na.rm = TRUE)
+plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",col="red",xlim=plot_range,ylim=c(-1,4),pch=1,main=expression(paste("Best Univariate vs. Multivariate Models of Macrocystis Dynamics")))
+
+# Add best multivariate fit
+points(mac.multi.out$obs,mac.multi.out$pred,col="blue",pch=2)
+# "Perfect fit", 1:1 line
+abline(a=0,b=1,lty=1,col="gray40")
+# Best fit line for univariate and multivariate models
+abline(lm(univar.out$pred ~ univar.out$obs), col = "red", lty = 3, lwd = 3)
+abline(lm(mac.multi.out$pred ~ mac.multi.out$obs),col="blue", lty=3, lwd=3)
+
+# Legend
+legend("topleft",legend=c("best univariate model","best multivariate model","1:1 line"),col=c("red","blue","gray40"),lty=c(3,3,1),lwd=c(3,3,2))
+```
+
+In this plot, the gray solid line represents the theoretical perfect fit (predictions equal observations), while the red and blue points are the output from the best univariate and multivariate models, respectively. The multivariate model performs substantially better, especially at *Macrocystis* densities around its mean (+/- 1 in normalized units, corresponding to +/- 1 standard deviation).
+
+#### Juvenile Macrocystis Model
+
+At this point, we have established the important variables driving adult *Macrocystis pyrifera* dynamics, which include physical forcing, other primary producers, and kelp forest herbivores. In Step 6, we will take this one step further by explicitly examining the direction, magnitude, and nonlinear shape of the interactions identified in the multivariate S-map model. However, before we get there, we will build three more multivariate models, of other representative kelp forest species, in order to compare them to the adult *Macrocystis* model. The first model to select is for juvenile *Macrocystis*, which will allow us to distinguish between the variables controlling the dynamics of the two life stages of this dominant species. Is herbivory important for young *Macrocystis* dynamics? Physical forcing? Competition for space with understory algas like *Laminaria* and *Pterogophora*?
+
+We proceed with model selection in the same way as for adult *Macrocystis*, beginning with all of the potential forcing variables identified in CCM, and adding the most informative variable to the model in each step.
+
+```{r young mac forward selection}
+# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
+multi_vars <- c(ccm.sig.vars[["ymac"]],"ymac")
+
+# Number of model selection steps to do
+n_steps <- length(multi_vars)
+
+selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
+
+# timer for the analysis
+ptm <- proc.time()
+for(i in 1:n_steps) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(multi_vars,selected.vars$var)
+  
+  # Vector to hold output rho's
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  # Vector to hold output S-map theta parameters
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
+  
+  # Find the single variable that best predicts Macrocystis dynamics one step ahead
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+    
+    # Run S-map with varying theta
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "ymac",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
+    
+    # Best rho and theta from S-map analysis
+    out.rho[j] <- max(temp$rho,na.rm=T)
+    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
+  }
+  
+  # Select the variable that maximizes predictive skill
+  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
+  selected.vars$cum.rho[i] <- max(out.rho)
+  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
+}
+proc.time()-ptm
+selected.vars
+
+# Plot results
+plot.new()
+par(mfrow=c(1,1))
+plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Juvenile Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+
+# Save the parameters from the best model
+best.modls[['ymac']] <- selected.vars
+```
+
+The best forward-selected model for young *Macrocystis* is higher-dimensional than for adult *Macrocystis*, and additional variables continue to add predictive ability until 11 variables are included: 4 of the 5 physical variables, the algas *Cystoseira* and *Laminaria*, and three herbivores, in addition to the two *Macrocystis* variables. Again, this model suggests important forcing from physical parameters, competition, and herbivory.
+
+#### Laminaria Model
+
+Now we run a model for *Laminaria*, the understory kelp. What's its story?
+
+```{r laminaria forward selection}
+# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
+multi_vars <- c(ccm.sig.vars[["lam"]],"lam")
+
+# Number of model selection steps to do
+n_steps <- length(multi_vars)
+
+selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
+
+# timer for the analysis
+ptm <- proc.time()
+for(i in 1:n_steps) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(multi_vars,selected.vars$var)
+  
+  # Vector to hold output rho's
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  # Vector to hold output S-map theta parameters
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
+  
+  # Find the single variable that best predicts Macrocystis dynamics one step ahead
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+    
+    # Run S-map with varying theta
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "lam",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
+    
+    # Best rho and theta from S-map analysis
+    out.rho[j] <- max(temp$rho,na.rm=T)
+    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
+  }
+  
+  # Select the variable that maximizes predictive skill
+  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
+  selected.vars$cum.rho[i] <- max(out.rho)
+  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
+}
+proc.time()-ptm
+selected.vars
+
+# Plot results
+plot.new()
+par(mfrow=c(1,1))
+plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Laminaria Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+
+# Save the parameters from the best model
+best.modls[['lam']] <- selected.vars
+```
+
+#### Purple Urchin Model
+
+And, finally, one for a representative and abundant herbivore, the purple urchin *Strongylocentrotus purpuratus*
+
+```{r purple urchin forward selection}
+# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
+multi_vars <- c(ccm.sig.vars[["purp"]],"purp")
+
+# Number of model selection steps to do
+n_steps <- length(multi_vars)
+
+selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
+
+# timer for the analysis
+ptm <- proc.time()
+for(i in 1:n_steps) {
+  # candidate variables are all those that have not yet been selected
+  poss_vars <- setdiff(multi_vars,selected.vars$var)
+  
+  # Vector to hold output rho's
+  out.rho <- numeric(length(poss_vars))
+  names(out.rho) <- poss_vars
+  # Vector to hold output S-map theta parameters
+  out.theta <- numeric(length(poss_vars))
+  names(out.theta) <- poss_vars
+  
+  # Find the single variable that best predicts Macrocystis dynamics one step ahead
+  for(j in 1:length(poss_vars)) {
+    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
+    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
+    
+    # Run S-map with varying theta
+    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "purp",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
+    
+    # Best rho and theta from S-map analysis
+    out.rho[j] <- max(temp$rho,na.rm=T)
+    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
+  }
+  
+  # Select the variable that maximizes predictive skill
+  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
+  selected.vars$cum.rho[i] <- max(out.rho)
+  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
+}
+proc.time()-ptm
+selected.vars
+
+# Plot results
+plot.new()
+par(mfrow=c(1,1))
+plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Purple Urchin Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
+
+# Save the parameters from the best model
+best.modls[['purp']] <- selected.vars
+```
+
+### 6. Tracking Real-time Species Interactions
+
+From the results of the cross-mapping and multivariate modeling exercises, it is clear that the algal and invertebrate species in the San Nicoloas Island kelp forest system interact with one another in nonlinear, complex, but predictable ways. Now that we have a multivariate predictive model for a number of species' dynamics, we can look at these phenomena in more detail, and answer the questions:
+
+  * *Are interactions between species constant over time (in both direction and magnitude)?*
+  * *If not, are there predictable conditions under which we may expect a certain type of interaction (e.g., competition vs. facilitation)?*
+
+Examples of more species-specific questions include:
+
+  * *Can we distinguish between times of top-down vs. bottom-up forcing of Macrocystis dynamics? What are their relative strengths?*
+  * *Are there different dynamics controlling juvenile and adult Macrocystis?*
+  * *What are the conditions under which the invertebrates compete vs. facilitate one another?*
+  
+The exploration of these questions will give us insight into a more mechanistic view of the nonlinear interactions in this dynamic system.
+
+For this exercise, we use S-maps to investigate the interactions strengths between physical variables and species, and species with one another, in real time. S-maps actually calculates sequential "Jacobian" community matrices (the local effect at each point on the attractor of each variable on every other variable). By explicitly recording these coefficients for each predicted vector, we can reveal how species interactions are changing over time. The logic and calculations behind this are described in Sugihara (1994) and Deyle et al. (2016).
+
+#### Single Embedding, Multiple Versions
+To compare dynamic interactions across species, it may be best to use one embedding (i.e. a uniform set of variables), and apply it to each species.  Therefore, we are controlling for the same set of interactions across species.
+
+We'll choose a subset of species which all show causal links (in both directions). We can do this with a subset of our cross-mapping exercise from step 4. We include the NPGO index as the only physical variable that was significantly mapped by all the biological variables.
+
+```{r sub smap, echo=F}
+xmap_subset <- function(subspp) {
+  subrast <- xmap_rast %>% 
+    filter(predictee %in% subspp & predictor %in% subspp)%>%
+    mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+    mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+  
+  ## plot
+  xmap_sub_plot <- ggplot(subrast,aes(x=force.name,y=pred.name,fill=rho)) +
+    geom_raster() +
+    scale_fill_distiller(palette="Spectral",name=expression(paste(rho, "(skill)"))) +
+    ggtitle("Kelp Forest Convergent Cross Mapping") +
+    xlab("Predictor (Forcing Variable)") +
+    ylab("Predicted Variable") +
+    theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+  
+  xmap_sub_plot
+}
+cohesive.CCM.plot <- xmap_subset(c("mac","purp","lam","wavy","npgo.mean","pter","red"))
+cohesive.CCM.plot
+ggsave(plot=cohesive.CCM.plot,filename="xmap_subset.png")
+```
+
+This is a fully resolved causation web, in that every variable causally links to all other variables. We could think of it as a coherent subset of the overall kelp forest dynamic system. Now we optimize the S-map theta parameter (degree of nonlinearity) for each species individually.
+
+```{r uniform multivariate embedding}
+# We keep the same embedding for each model fit, but optimize the model (i.e., find best theta and calculate S-maps) for each species individually
+require(quantreg)
+
+species <- c("mac","purp","lam","wavy","pter","red","ymac")
+
+multi.coh.theta <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
+
+multi.coh.mods <- list()
+coh.long <- list()
+int.box <- list()
+
+ptm=proc.time()
+
+for (i in 1:7) {
+  spp <- species[i]
+  lib.vars <- c(species,"npgo.mean")
+  temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+  
+  # Find optimal theta
+  opt.stats <- temp %>% filter(rho==max(rho))
+  multi.coh.theta$theta[i] <- opt.stats$theta
+  multi.coh.theta$rho[i] <- opt.stats$rho
+  multi.coh.theta$mae[i] <- opt.stats$mae
+  
+  # Save model coefficients with optimal theta
+  best_model <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  colnames(best_model[[1]]$smap_coefficients) <- c(lib.vars,"const")
+  multi.coh.mods[[spp]] <- best_model[[1]]
+  
+  # long form for plotting
+  coh.long[[spp]] <- multi.coh.mods[[spp]]$smap_coefficients %>% 
+    as.data.frame() %>% 
+    gather(key=effect,value=value,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    group_by(effect)
+  
+  # box plot of interactinos
+  int.box[[spp]] <- ggplot(coh.long[[spp]],aes(x=effect,y=value,fill=effect))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle(c("Interactive Effects on Dynamics, ",spp))+
+  guides(fill="none")
+}
+
+multi.coh.theta
+proc.time()-ptm
+
+```
+
+```{r quantile plot, echo=F}
+quant_reg_plot <- function(x,y,lvl=0.95) {
+  
+  qL <- rq(y ~ x,(1-lvl)) 
+  qU <- rq(y ~ x,lvl)
+  plot(x,y,pch=8)
+  abline(a=qL$coefficients[1],b=qL$coefficients[2],lty=2,col="red",lwd=2)
+  abline(a=qU$coefficients[1],b=qU$coefficients[2],lty=2,col="red",lwd=2)
+}
+```
