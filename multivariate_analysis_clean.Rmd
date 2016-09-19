@@ -1,34 +1,65 @@
 ---
-title: "SNI_Multivariate_Modeling"
+title: "San Nicolas Island Kelp Forest: An Empirical Dynamic Exploration"
 author: "Owen Liu"
-date: "September 9, 2016"
+date: "September 15, 2016"
 output: html_document
 ---
 
-## An Empirical Dynamic Exploration
-
 ### 1. Introduction
-This project will use data from a long-term monitoring project at San Nicolas Island to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive and predatory/herbivorous interactions in real time across the timeframe of the dataset.  The species we will look at are:
+This project will use data from a long-term monitoring project at San Nicolas Island (SNI) to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive, mutualistic, and herbivorous species interactions across the timeframe of the dataset.  The species we will look at are:
 
-* Brown algaes:
-  + *Macrocystis pyrifera*, giant kelp (adult)
-  + *Macrocystis pyrifera*, giant kelp (juveniles)
-  + *Laminaria* species (combined)
-  + *Cystoseira osmundacea*
-  + *Pterogophora californica*
-  + *Eisenia arborea*, southern sea palm
+* **Brown algaes**
+    + __*Macrocystis pyrifera*__, giant kelp (adult, >1m tall)
+    + __*Macrocystis pyrifera*__, giant kelp (juveniles, <1m tall)
+    + __*Laminaria*__ species (combined)
+    + __*Cystoseira osmundacea*__
+    + __*Pterogophora californica*__
+    + __*Eisenia arborea*__, southern sea palm
 
-* Echinoderms
-  + *Strongylocentrotus purpuratus*, purple sea urchin
-  + *S. franciscanus*, red sea urchin
-  + *Patiria miniata*, bat star
-  + *Pisaster giganteus*, giant sea star
-  + *Parastichopus parvimensis*, warty sea cucumber
+* **Echinoderms**
+    + __*Strongylocentrotus purpuratus*__, purple sea urchin
+    + __*S. franciscanus*__, red sea urchin
+    + __*Patiria miniata*__, bat star
+    + __*Pisaster giganteus*__, giant sea star
+    + __*Parastichopus parvimensis*__, warty sea cucumber
 
-* Gastropods
-  + *Megastraea undosa*, wavy turban snail
+* **Gastropods**
+    + __*Megastraea undosa*__, wavy turban snail
+
+***
+
+#### The San Nicolas Island Dataset
+San Nicolas Island is a small, remote island situated about 100 kilometers offshore from southern California. The benthic monitoring data herein have been collected more or less every six months for more than 30 years by the USGS and its Western Ecological Research Center (USGS-WERC), and in 2013 the datasets were made available publicly through Ecological Archives:
+
+Michael C. Kenner, James A. Estes, M. Tim Tinker, James L. Bodkin, Robert K. Cowen, Christopher Harrold, Brian B. Hatfield, Mark Novak, Andrew Rassweiler, and Daniel C. Reed. 2013. A multi-decade time series of kelp forest community structure at San Nicolas Island, California (USA). Ecology 94:2654. http://dx.doi.org/10.1890/13-0561.1
+
+The datasets together represent a remarkable record of rocky reef dynamics, across varying environmental conditions such as major storm events and shifts in large oceanographic cycles like the El Nino Southern Oscillation and the Pacific Decadal Oscillation. From the abstract:
+
+> San Nicolas Island is surrounded by broad areas of shallow subtidal habitat, characterized by dynamic kelp forest communities that undergo dramatic and abrupt shifts in community composition. Although these reefs are fished, the physical isolation of the island means that they receive less impact from human activities than most reefs in Southern California, making San Nicolas an ideal place to evaluate alternative theories about the dynamics of these communities. Here we present monitoring data from seven sampling stations surrounding the island, including data on fish, invertebrate, and algal abundance. These data are unusual among subtidal monitoring data sets in that they combine relatively frequent sampling (twice per year) with an exceptionally long time series (since 1980). Other outstanding qualities of the data set are the high taxonomic resolution captured and the monitoring of permanent quadrats and swaths where the history of the community structure at specific locations has been recorded through time. Finally, the data span a period that includes two of the strongest ENSO events on record, a major shift in the Pacific decadal oscillation, and the reintroduction of sea otters to the island in 1987 after at least 150 years of absence. These events provide opportunities to evaluate the effects of bottom-up forcing, top-down control, and physical disturbance on shallow rocky reef communities.
+
+The island itself is small, about 14 kilometer long and 5 km wide. The seven sampling stations are situated around the island, some in pairs:
+
+![Figure 1. Map of the San Nicolas Island monitoring stations. From Kenner et al. (2013).](SNI_site_map.jpg)
+
+```{r monitoring stations,echo=F}
+library(knitr)
+W_D <- getwd()
+monitoring_stations <- read.csv(paste0(W_D,"/data/Table1_Monitoring_Stations.csv"))
+names(monitoring_stations) <- c("Station Number","Station Name","Latitude","Longitude","Mean Depth (m)","Date First Sampled")
+
+kable(monitoring_stations,align=c("c","l","c","c","c","l"),caption="Table 1. SNI Monitoring Stations.")
+```
+
+Data is collected at each station during each monitoring period on the density and percent cover of benthic species (algae and invertebrates), and benthic and midwater fish species. Each of the seven monitoring sites has a number of permanent swaths along which data is collected every period:
+
+![Figure 2. Example layout of a SNI monitoring site, showing individual 10m swaths on either side of the 50m main transect line. From Kenner et al. (2013).](example_swaths.jpg)
+
+For full description of the monitoring methods, see the metadata from Kenner et al. (2013) at the DOI above. For our analyses, we use a subset of data, compiled from the benthic density raw data. Data for the 12 species of interest (above) were compiled, and to maximize the potential amount of dynamic information, the data from each swath at each station was treated as a separate time series, leaving us with 37 time series for each of the 12 species. Each time series contains 63 data points, corresponding to the 63 monitoring periods, one approximately every six months from Fall, 1980 to Fall, 2011. Individual time series of species density were normalized to have a mean of zero and a standard deviation of 1.
+
+These first lines of code import the benthic data we need.
   
 ```{r setup, message=F}
+# Here are some R libraries we need
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -44,7 +75,7 @@ dat.long <- read.csv(paste0(W_D,"/data/benth_data_trim_normalized2016-09-09.csv"
 study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter","mac","ymac")
 ```
 
-As an initial step, we also import a species name key, mostly for reference and plot labeling later
+We also import a species name key, mostly for reference and plot labeling later.
 ```{r species key}
 # Species Key for all benthic density species (for reference)
 #*************************************
@@ -58,7 +89,7 @@ spp.key.bdens <- spp.key %>%
 spp.key.bdens$short <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
 # ************************************
 
-# quick function to turn a "genus species" into an abbreviated gen.spe identifier
+# quick function to turn a "genus species" identifier into an abbreviated gen.spe identifier
 abbr.species.names <- function(x) {
     temp <- strsplit(x," ")[[1]]
     g <- substr(temp[1],1,3)
@@ -66,12 +97,14 @@ abbr.species.names <- function(x) {
     paste(g,spe,sep=".")
 }
 
+# Names to apply to plots later
 spp.key.bdens$plotting <- sapply(spp.key.bdens$long,abbr.species.names)
-# identify kelp juveniles as separate variable
+
+# identify kelp juveniles as a separate variable
 spp.key.bdens$plotting[spp.key.bdens$long=="Macrocystis pyrifera <1m"] <- "Mac.pyr(j)"
 ```
 
-These next lines produce a block (wide-form) dataset.  Keep in mind, these data are from multiple transects across multiple sites on the small islands. Empirical dynamic modeling can use multiple spatial replicates to produce increased predictability by concatenating them into one long time series. We preserve a time indicator (variable 'period') to ensure that we do not "cross" the boundaries of replicate time series in following analyses.
+Next we produce a block (wide-form) dataset, where each column represents a species' time series.
 
 ```{r block data}
 # Cast to wide form
@@ -83,37 +116,59 @@ benthdat.block <- dat.long %>%
 #*************************************
 ```
 
+***
+
+#### Analytical Approach: Empirical Dynamic Modeling
+The datasets' long record and breadth of species allows for a detailed look at many aspects of kelp forest dynamics. The study of kelp forest community dynamics in California has a long history, with a wide breadth of empirical, experimental, and modeling literature documenting the structure and function of kelp forest communities, the bottom-up and top-down forces controlling relative species abundance, and characteristic kelp forest species interactions (e.g., Harrold and Reed, 1985; Foster and Schiel, 1985; Paine, 1992; Sala and Graham, 2002; Reed et al., 2011). Some more recent work has revealed nonlinear effects of certain drivers on kelp dynamics (Bell et al., 2015), and hinted at the importance of considering indirect interactions (Arkema et al., 2009). 
+
+The preponderance of evidence from the southern California kelp forest literature paints a view of these ecosystems as dynamic and complex, with the influences of physical oceanography and various biological forces interacting in a nonlinear manner to structure kelp forest communities. In the analysis below, we employ a set of methods, jointly called Empirical Dynamic Modeling (EDM), that has been specifically designed to describe nonlinear dynamic systems of multiple variables. To my knowledge, EDM has never before been applied to describe kelp forest data.
+
+Briefly, EDM is based on the idea that a dynamic system can be reconstructed from time series of observations of that system. [This video animation](https://youtu.be/fevurdpiRYg) gives a good introduction to this type of reconstruction. Basically, we can interpret a dynamic system as existing in multivariate coordinate space, or state space, where each member of the dynamic system is on dimension.  If a system has predictable dynamics, a multidimensional "manifold" or "attractor" emerges, where the system travels in time along the multidimensional attractor, and its states are recorded in each variable's time series as projections onto one-dimensional axes (see the video animation). In a mathematical theorem attributed to Takens (1981), it was shown that one can reconstruct a "shadow" version of the original manifold using lagged versions of just one of the state variables, like a one-dimensional shadow cast by the system as it moves along the manifold. The reconstruction should maintain the mathematical properties of the original attractor.  For example, in the image below, we see an attractor on the left formed from the coupled interactions of three variables (we could call them species) evolving through time. On the right, we see a shadow reconstruction of that attractor using two lags of just the y-variable. The two versions of the attractor maintain similar topological properties, and we can infer properties of the manifold on the left by examining the manifold on the right. 
+
+![Figure 3. (Left) An attractor in a 3-dimensional dynamic system, composed of variables x, y, and z. (Right) A reconstruction of the original manifold using lagged versions of just one variable (y). From Deyle et al. (2011).](lorenz_example_deyle.png)
+
+Reconstructing these manifolds and using them for to explore the properties of dynamic systems is a form of state-space reconstruction. The motivation behind state-space reconstruction is that by building a facsimile of the true attractor, we can use it to predict the dynamics of individual variables and investigate how they are related. Takens' original theorem and extensions of it (especially see Sugihara and May, 1990; Sugihara, 1994; Deyle et al., 2011; Sugihara et al., 2012) provide specific methods for examining state-space reconstructions, and their numerous and flexible applications. Together, the methods arising from this work have become known as Empirical Dynamic Modeling (EDM), and it is these tools that we use in the following analyses. The methods are "empirical" in the sense that we use recorded time series data to reveal the underlying dynamic system, with no *a priori* assumptions about the relationships between variables, except that they are both members of the system (which we also test for). Because of this, EDM can be an ideal option for exploring nonlinear and complex dynamic systems.
+
+In the analysis that follows, in each step that involves a new type of EDM method, its logic will be briefly described.  However, keep in mind that the basic theory behind each individual method is the same: We use some dynamic information (from single or multiple time series) to reconstruct a shadow manifold, and then use the properties of that manifold to make predictions.
+
+***
+
+#### Note about data processing
+Usual best practice for EDM is to create normalized time series, so that state-space reconstructions are not distorted by differences in orders of magnitude between variables. In addition, we concatenate each species/station/swath time series into one long time series for each species, while preserving time indicator (variable 'period') and a site identifier, to ensure that we do not "cross" the boundaries of replicate time series in analyses. Empirical dynamic modeling can use multiple spatial replicates in lieu of increased length of individual time series, to maximize the dynamic information that can be drawn from the system (see Hsieh et al., 2008; Clark et al., 2015). Because the monitoring methods and species are the same across the island, and SNI itself is small, we choose to concatenate the available time series into one long time series for each species. However, we do examine the validity of this assumption in Step 3, and the reader should bear in mind that these data are from multiple transects across multiple stations around SNI.
+
+***
+
 ### 2. Adding Physical Variables
 
-We'll also want to investigate where physical forcing fits into our dynamic story. A body of other research has established that a combination of physical forcing (waves, storms), temperature, and lower frequency climate modes (e.g., El Ninos) have an important influence on the dynamics of kelp forests. With these data, we can draw connections between the physical variables and not just *Macrocystis* dynamics, but all of the species in our constrained trophic web.
+Along with investigating dynamic species interactions, we also want to explore where physical forcing fits into our dynamic story. A body of other research has established that a combination of physical forcing (waves, storms), temperature, and lower frequency climate modes (e.g., El Ninos) have an important influence on the dynamics of kelp forests (Reed et al., 2011; Cavanaugh et al., 2011; Bell et al., 2015; Young et al., 2015). With these data, we can draw connections between the physical variables and not just *Macrocystis pyrifera* dynamics, but all of the species in our constrained trophic web.
 
 We have four datasets, already processed into the same time frame (periods) as the SNI benthic monitoring data (with separate code not included here):
 
-* The Multivariate ENSO index (MEI)
-  + The first principal component of a composite set of physical parameters
-  + positive values of the MEI index are generally associated with El Nino conditions, decreases in wind-driven upwelling, warmer surface waters and nutrient-poor conditions
-  + from NOAA, http://www.esrl.noaa.gov/psd/enso/mei
-  + Variable here is the average index value for the four months preceding each Spring or Fall monitoring period (i.e., December to March or June to September, respectively)
-* The Pacific Decadal Oscillation index (PDO)
-  + Leading empirical orthogonal function (EOF) of monthly sea surface temperature anomalies (SST-A) over the North Pacific (poleward of 20° N) after the global average sea surface temperature has been removed
-  + positive PDO values indicate warmer SST, and nutrient-poor conditions along the western coast of the contiguous United States
-  + obtained from http://research.jisao.washington.edu/pdo/
-  + Aggregated and averaged the same way as MEI
-* The North Pacific Gyre Oscillation (NPGO)
-  + from Di Lorenzo, 2008, http://www.o3d.org/npgo/
-  + climate pattern that emerges as the 2nd dominant mode of sea surface height variability (2nd EOF SSH) in the Northeast Pacific
-  + better correlated with salinity, nutrients, and chlorophyll than PDO
-  + Aggregated and averaged the same way as MEI and PDO
-* Sea surface temperature (SST)
-  + Sea surface temperature data from Begg Rock and San Nicolas Island buoys, from the Coastal Data Information Program (CDIP), cdip.ucsd.edu
-  + Incomplete data
-  + Similar to the above, value is an average SST for the four months preceding each period
-* Maximum significant wave height (Hs)
-  + Also from the Begg and SNI buoys and the CDIP
-  + Signficant wave height is defined as the average height, in meters, of the one third highest waves in the record
-  + Instead of an average, value here is the maximum significant wave height of the four months preceding each period. This is meant to capture any large storm events, as well as general level of physical disturbance
+* **The Multivariate ENSO index (MEI)**
+    + The first principal component of a composite set of physical parameters
+    + positive values of the MEI index are generally associated with El Nino conditions, decreases in wind-driven upwelling, warmer surface waters and nutrient-poor conditions
+    + from NOAA, http://www.esrl.noaa.gov/psd/enso/mei
+    + Variable here is the average index value for the four months preceding each Spring or Fall monitoring period (i.e., December to March or June to September, respectively)
+* **The Pacific Decadal Oscillation index (PDO)**
+    + Leading empirical orthogonal function (EOF) of monthly sea surface temperature anomalies (SST-A) over the North Pacific (poleward of 20° N) after the global average sea surface temperature has been removed
+    + positive PDO values indicate warmer SST, and nutrient-poor conditions along the western coast of the contiguous United States
+    + obtained from http://research.jisao.washington.edu/pdo/
+    + Aggregated and averaged the same way as MEI
+* **The North Pacific Gyre Oscillation (NPGO)**
+    + from Di Lorenzo, 2008, http://www.o3d.org/npgo/
+    + climate pattern that emerges as the 2nd dominant mode of sea surface height variability (2nd EOF SSH) in the Northeast Pacific
+    + better correlated with salinity, nutrients, and chlorophyll than PDO
+    + Aggregated and averaged the same way as MEI and PDO
+* **Sea surface temperature (SST)**
+    + Sea surface temperature data from Begg Rock and San Nicolas Island buoys, from the [Coastal Data Information Program (CDIP)](cdip.ucsd.edu)
+    + Incomplete data (only have data since 1996)
+    + Similar to the above, value is an average SST for the four months preceding each period
+* **Maximum significant wave height (Hs)**
+    + Also from the Begg and SNI buoys and the CDIP
+    + Signficant wave height is defined as the average height, in meters, of the one third highest waves in the record
+    + Instead of an average, value here is the maximum significant wave height of the four months preceding each period. This is meant to capture any large storm events, as well as general level of physical disturbance
   
-As with the other variables in our analysis, these physical variables have been normalized to zero mean and unit variance to facilitate comparison among variables and not distort state-space reconstructions. Unlike the biological data, where there are unique spatial replicates, the physical data have only one value for each monitoring period, and hence their values are replicated (copied) for each site to match the total length of the data.
+As with the other variables in our analysis, these physical variables have been normalized to zero mean and unit standard deviation to facilitate comparison among variables and not distort state-space reconstructions. Unlike the biological data, where there are unique spatial replicates, the physical data have only one value for each of the 63 monitoring periods, and hence their values are replicated (copied) for each site to match the total length of the biological data.
 
 ```{r physical variable import}
 # Read in the variables
@@ -131,18 +186,27 @@ phys.vars.key <- data_frame(long=c("Multivariate ENSO Index","Pacific Decadal Os
 fullkey <- bind_rows(spp.key.bdens,phys.vars.key)
 ```
 
+***
+
 ### 3. Establishing Univariate Predictability and Nonlinearity
-For each of these time series, we have a few steps to see if they seem appropriate to analyze together with empirical dynamic modeling techniques.  In other words, we don't want to rely on simple cross-correlation or the prior knowledge that all these data were collected at the same island at the same times. We want evidence that:
 
-* Variables can be probably embedded (i.e., they show evidence of limited system dimensionality)
-* Variables display state-dependent (nonlinear) dynamics, and therefore that nonlinear methods are appropriate for analysis of these data
-* Specific monitoring sites display dynamics that are predictable from other sites' dynamics, validating the approach of combining data
+For each of these time series, we have a few steps to see if they seem appropriate to analyze together with EDM techniques. We want to be careful that our state space reconstructions are reliable and represent valid manifolds. In other words, we don't want to rely on simple cross-correlation or the prior knowledge that all these data were collected at the same island at the same times. We want evidence that:
 
-First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection, which will also give us an idea of the appropriate embedding dimension. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine species' cross-predictability across sites.
+1. Variables can be probably embedded (i.e., they show evidence of limited system dimensionality)
+2. Variables display state-dependent (nonlinear) dynamics, and therefore that nonlinear (EDM) methods are appropriate for analysis of these data
+3. Specific monitoring sites display dynamics that are predictable from other sites' dynamics, validating the approach of concatenating time series data.
 
-First, let's use simplex projection to investigate each species' self predictability.
+First, we use simplex projection to get a sense of system dimensionality for each variable, which will also give us an idea of the appropriate embedding dimension to use in later analyses. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine species' cross-predictability across monitoring stations.
+
+***
 
 #### Simplex Projection and Embedding Dimensions
+
+First, for each species/variable separately, we will search for signals of deterministic behavior using simplex projection. In simplex projection, we reconstruct a shadow manifold in *E* dimensions, where *E* is the number of variables, or number of progressive lags of a single variable used in the reconstruction. *E* is called the __*embedding dimension*__. The *E*-length vectors, for example $\it{\bf{x_{t}}} = <x_t,(x_{t-1}),(x_{t-2})>$ are points on the attractor, and the set of *E*-length vectors used for the reconstruction is called the __*library*__. To predict $\it{\bf{x_{t+1}}}$ , the simplex algorithm finds the *E* +1 nearest neighbors of $\it{\bf{x_{t}}}$, and the prediction $\it{\bf{\hat{x}_{t+1}}}$ is the average of the nearest neighbors' values at $\it{t+1}$, weighted by their Euclidean distance from $\it{\bf{x_{t}}}$ at $\it{t}$. In simple terms, a forecast for a given point in state space is surmised from the forward trajectories of nearby points. This is akin to asking, "When the system has been in a state like this before, what happened next?"
+
+By varying the value of *E*, we can determine what the best embedding dimension is for each variable in our analysis, essentially a proxy for the number of variables that best "unfold" and reveal the attractor. Simplex projection also 
+
+First, let's use simplex projection to investigate each species' self predictability.
 
 ```{r univariate simplex}
 # For all the steps in the univariate analyses, we need an indication of the breaks in the different sites, or concurrent time series.
@@ -999,3 +1063,40 @@ quant_reg_plot <- function(x,y,lvl=0.95) {
   abline(a=qU$coefficients[1],b=qU$coefficients[2],lty=2,col="red",lwd=2)
 }
 ```
+
+### References
+
+*Arkema, K. K., Reed, D. C., & Schroeter, S. C. (2009). Direct and indirect effects of giant kelp determine benthic community structure and dynamics. Ecology, 90(11), 3126–3137.*
+
+*Bell, T. W., Cavanaugh, K. C., Reed, D. C., & Siegel, D. A. (2015). Geographical variability in the controls of giant kelp biomass dynamics. Journal of Biogeography, 42(10), 2010–2021. http://doi.org/10.1111/jbi.12550*
+
+*Cavanaugh, K. C., Siegel, D. A., Reed, D. C., & Dennison, P. E. (2011). Environmental controls of giant-kelp biomass in the Santa Barbara Channel, California. Marine Ecology Progress Series, 429, 1–17. http://doi.org/10.3354/meps09141*
+
+*Clark, A. T., Ye, H., Isbell, F., Deyle, E. R., Cowles, J., Tilman, D., & Sugihara, G. (2015). Spatial convergent cross mapping to detect causal relationships from short time series. Ecology, 96(5), 1174–1181.*
+
+*Deyle, E. R., & Sugihara, G. (2011). Generalized theorems for nonlinear state space reconstruction. PLoS ONE, 6(3). http://doi.org/10.1371/journal.pone.0018295*
+
+*Foster, M., & Schiel, D. (1985). Ecology of giant kelp forests in California: a community profile. United States Fish and Wildlife Service Biological Report, 85, 1–152. http://doi.org/10.1002/hyp.5819*
+
+*Harrold, C., & Reed, D. C. (1985). Food Availability , Sea Urchin Grazing , and Kelp Forest Community Structure. Ecology, 66(4), 1160–1169.*
+
+*Hsieh, C., Anderson, C., & Sugihara, G. (2008). Extending nonlinear analysis to short ecological time series. The American Naturalist, 171(1), 71–80. http://doi.org/10.1086/524202*
+
+*Kenner, Michael C., James A. Estes, M. Tim Tinker, James L. Bodkin, Robert K. Cowen, Christopher Harrold, Brian B. Hatfield, Mark Novak, Andrew Rassweiler, and Daniel C. Reed (2013). "A multi‐decade time series of kelp forest community structure at San Nicolas Island, California (USA)." Ecology 94, no. 11 : 2654-2654.*
+
+*Paine, R. T. (1980). Food webs: linkage, interaction strength and community infrastructure. Journal of Animal Ecology, 49(3), 666–685.*
+
+*Reed, D. C., Rassweiler, A., Carr, M. H., Cavanaugh, K. C., Malone, D. P., & Siegel, D. A. (2011). Wave disturbance overwhelms top-down and bottom-up control of primary production in California kelp forests. Ecology, 92(11), 2108–2116. http://doi.org/10.1890/11-0377.1*
+
+*Sala, E., & Graham, M. H. (2002). Community-wide distribution of predator-prey interaction strength in kelp forests. Proceedings of the National Academy of Sciences of the United States of America, 99(6), 3678–3683. http://doi.org/10.1073/pnas.052028499*
+
+*Sugihara, G. (1994). Nonlinear forecasting for the classification of natural time series. Philosophical Transcations of the Royal Society of London Series A-Mathematical Physical and Engineering Sciences, 348, 477–495.*
+
+*Sugihara, G., & May, R. M. (1990). Nonlinear forecasting as a way of distinguishing chaos from measurement error in time series. Nature, 344(6268), 734–741. http://doi.org/10.1038/344734a0*
+
+*Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M., & Munch, S. (2012). Detecting causality in complex ecosystems. Science, 338(6106), 496–500. http://doi.org/10.1126/science.1227079*
+
+*Takens, F. (1981). Detecting strange attractors in turbulence. In D. A. Rand & L. S. Young (Eds.), Symposium on Dynamical Systems and Turbulence (Vol. 898, pp. 366–381). Berlin: Springer-Verlag. http://doi.org/10.1017/CBO9781107415324.004*
+
+*Young, M. A., Cavanaugh, K. C., Bell, T. W., Raimondi, P. T., Edwards, C. A., Drake, P. T., … Storlazzi, C. (2015). Environmental controls on spatial patterns in the long-term persistence of giant kelp in central California. Ecology, 86(1), 45–60. http://doi.org/10.1890/15-0267.1*
+
