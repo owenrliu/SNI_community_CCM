@@ -118,21 +118,72 @@ As with the other variables in our analysis, these physical variables have been 
 
 For each of these time series, we have a few steps to see if they seem appropriate to analyze together with EDM techniques. We want to be careful that our state space reconstructions are reliable and represent valid manifolds. In other words, we don't want to rely on simple cross-correlation or the prior knowledge that all these data were collected at the same island at the same times. We want evidence that:
 
-* Variables can be probably embedded (i.e., they show evidence of limited system dimensionality)
-* Variables display state-dependent (nonlinear) dynamics, and therefore that nonlinear methods are appropriate for analysis of these data
-* Specific monitoring sites display dynamics that are predictable from other sites' dynamics, validating the approach of combining data
-
-First, for each species/variable separately, we'll search for signals of deterministic behavior, or self-predictability, using simplex projection, which will also give us an idea of the appropriate embedding dimension. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine species' cross-predictability across sites.
-
-First, let's use simplex projection to investigate each species' self predictability.
-
-For each of these time series, we have a few steps to see if they seem appropriate to analyze together with EDM techniques. We want to be careful that our state space reconstructions are reliable and represent valid manifolds. In other words, we don't want to rely on simple cross-correlation or the prior knowledge that all these data were collected at the same island at the same times. We want evidence that:
-
-
 1. Variables can be probably embedded (i.e., they show evidence of limited system dimensionality)
 2. Variables display state-dependent (nonlinear) dynamics, and therefore that nonlinear (EDM) methods are appropriate for analysis of these data
 3. Specific monitoring sites display dynamics that are predictable from other sites' dynamics, validating the approach of concatenating time series data.
 
-First, for each species/variable separately, we will search for signals of deterministic behavior using simplex projection. In simplex projection, we reconstruct a shadow manifold in *E* dimensions, where *E* is the number of variables, or number of progressive lags of a single variable used in the reconstruction. *E* is called the __*embedding dimension*__. The *E*-length vectors, for example $\it{\bf{x_{t}}} = <x_t,(x_{t-1}),(x_{t-2})>$ are points on the attractor, and the set of *E*-length vectors used for the reconstruction is called the __*library*__. To predict $\it{\bf{x_{t+1}}}$ , the simplex algorithm finds the *E* +1 nearest neighbors of $\it{\bf{x_{t}}}$, and the prediction $\it{\bf{\hat{x}_{t+1}}}$ is the average of the nearest neighbors' values at $\it{t+1}$, weighted by their Euclidean distance from $\it{\bf{x_{t}}}$ at $\it{t}$. In simple terms, a forecast for a given point in state space is surmised from the forward trajectories of nearby points. This is akin to asking, "When the system has been in a state like this before, what happened next?"
+First, we use simplex projection to get a sense of system dimensionality for each variable, which will also give us an idea of the appropriate embedding dimension to use in later analyses. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine individual species' cross-predictability across monitoring stations.
 
-which will also give us an idea of the appropriate embedding dimension. Then, we explicitly look for evidence of state-dependence and nonlinear dynamics with a prediction horizon test and S-maps.  Finally, we will determine species' cross-predictability across sites.
+***
+
+#### Simplex Projection and Embedding Dimensions
+
+First, for each species/variable separately, we will search for signals of deterministic behavior using simplex projection. In simplex projection, we reconstruct a shadow manifold in *E* dimensions, where *E* is the number of variables, or number of progressive lags of a single variable used in the reconstruction. *E* is called the __*embedding dimension*__. The *E*-length vectors, for example $\it{\bf{x_{t}}} = <x_t,x_{t-1},x_{t-2}>$ are points on the attractor, and the set of *E*-length vectors used for the reconstruction is called the __*library*__. To predict $\it{\bf{x_{t+1}}}$ , the simplex algorithm finds the *E* +1 nearest neighbors of $\it{\bf{x_{t}}}$ in the state space, and the prediction $\it{\bf{\hat{x}_{t+1}}}$ is the average of the nearest neighbors' values at $\it{t+1}$, weighted by their Euclidean distance from $\it{\bf{x_{t}}}$ at $\it{t}$. This is the essence of simplex projection: a forecast for a given point in state space is surmised from the forward trajectories of observed nearby points.
+
+In descriptive terms, this is akin to asking, "When the system has been in a state like this before, what happened next?" For example, if we are interested in predicting *Macrocystis* density next year, we might take the current three-year density trend (this year, last year, and the year before, *E*=3) and compare it to a subset of times in the past when three-year dynamics looked similar to today. Our prediction, logically, would be the average of that subset, projected foreward one year and weighted by their similarity to the current trend.
+
+By varying the value of *E*, we can determine what the best embedding dimension is for each variable in our analysis, essentially a proxy for the number of variables that best "unfolds" or best represents the shadow attractor. We can measure the skill of an embedding by comparing the estimated forecasts $\it{\bf{\hat{x}_{t+1}}}$ with the true values $\it{\bf{x_{t+1}}}$, and we report it with $\it{\bf{\rho}}$, the Pearson correlation coefficient between predictions and observations. To avoid in-sample fitting, we use leave-one-out cross validation, predicting one vector at a time from a library of the other vectors.
+
+The prediction horizon effect check is promising overall, as most variables decline in predictive ability with increasing time horizon. For *Pterogophora californica*, there is some evidence of cyclic behavior, in that dynamics are more predictable 6 periods in the future than 3 or 4 periods. This is something to be mindful of, but we leave *Pterogophora* in our analysis for now.
+
+***
+
+#### Determining Nonlinearity with S-maps
+
+We can look for further evidence of nonlinearity with S-maps. S-maps is short for "sequentially weighted global linear maps", and it is similar to simplex projection, except instead of using just the *E* +1 nearest neighbors to make forecasts, S-maps uses all library vectors, and exponentially weights them by their distance to the prediction vector before using linear regression to make a forecast. A parameter, $\it{\bf{\theta}}$, tunes how much greater weight is given to nearby points. If $\it{\bf{\theta}}=0$, all library vectors are weighted equally, and the resulting model is just a vector autogressive (VAR) model of order *E*. However, as $\it{\bf{\theta}}$ is tuned above 0, nearby points in state-space are given more weight in forecasts. Therefore, if model skill $\it{\bf{\rho}}$ increases with increasing $\it{\bf{\theta}}$, it is evidence of nonlinear, state-dependent dynamics. For a more formal description of the S-maps procedure, see Sugihara, 1994 and Deyle et al., 2016.
+
+As a side note, with $\it{\bf{\theta}}>0$, although the set library vectors remains constant, the *weights* given to library vectors for regression is specific to each point in state-space, and therefore a separate linear map is created for each predicted vector. This is why the procedure is called "sequentially weighted global linear maps". Conceptually, as the dynamic system moves along the surface of the attractor, S-maps sequentially computes linear maps to the next point based on nearby points. This sequential weighting becomes important for our analysis in Step 5.
+
+For prediction of each variable using S-maps, we can again use the optimal embedding dimension, *E*, found through simplex projection, and we plot the tuning parameter $\it{\bf{\theta}}$ against $\it{\bf{\rho}}$ to look for evidence of nonlinear dynamics.
+
+All variables show significantly improved predictive ability with increased theta, suggesting nonlinear dynamics. Together, the simplex, prediction horizon, and S-map results suggest our approach is valid--variables are predictable, and most predictable in a nonlinear manner.
+
+***
+
+#### Cross-site Predictability for Individual Species
+
+Before we continue on to cross-species predictions and dynamics, we have to check to see if different sites have cross-predictability, to validate our choice to pool all of the data (see "Note about data processing" above). To do this is a bit tricky. We keep the individual transect time series within each site pooled, but test for predictability *between sites*.
+
+For each species, we use simplex projection, but unlike before, we specify the sets of library vectors and prediction vectors explicitly, to match the 7 different sites (i.e., use the time series from one site to create the library, and use it to predict a different site).  Because this is not necessarily a symmetrical process (e.g., for a given species, site 1 may predict the dynamics of site 2 better than site 2 can predict site 1), there will be 49 runs for each species (7 sites times 7 crosses per site, itself and the 6 other sites).  We allow *E* to vary in each run, and extract the best $\it{\bf{\rho}}$ from each site-to-site comparison for each species, ensuring that it is significantly greater than zero ($\it{p<0.05}$.
+
+In the raster plots, gray represents a non-significant result, and cool to warm colors represent increasing $\it{\bf{\rho}}$. As we can see from the plots, some sites are not predictable for some species (e.g., Site 7 for juvenile *Macrocystis*, or site 5 for the wavy turban snail *Megastraea undosa*).  Rows or columns that appear gray (NA, non-significant forecast skill) or very cool (blue-ish) in these plots indicate site pairs that have little or no cross-predictability for a given species. However, there are no sites which are universally unpredictable or useless as library sites across all species (although Site 7 is not very predictable for most species, and may be worth revisiting later).  For now, we can feel confident in using all the available data for these species.
+
+Our univariate analyses have revealed strong evidence of a nonlinear, but predictable dynamic system. With these initial diagnostics in hand, we can begin to explore the dynamic relationships between species. The next step will be to see if the kelp forest species show evidence of causative links.
+
+***
+
+### 4. Determining Causation Between Species Using Convergent Cross Mapping
+
+#### Introduction to Convergent Cross Mapping
+
+Generalizations of Takens' theorem indicate that if two variables (in our case, species or physical variables) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence (see Sugihara et al., 2012; Deyle et al., 2013; Ye et al., 2015; Clark et al., 2015) . In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to forecast another. CCM works just like univariate simplex projection that we did in Step 3, except that separate variables are used for library and prediction vectors. If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, the *causal effect of A on B is determined by how well B cross-maps A*.
+
+Cross-mapping can distinguish unidirectional forcing (A forces B but B does not force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C). To look for a causal signal, we plot predictive skill  $\it{\bf{\rho}}$ against library size (the number of embedded vectors used to construct the attractor). There are two criteria for CCM to establish causality. First, and most obviously, predictive cross-map skill using all available data should be significantly greater than zero. Second, that predictability should be convergent.  Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and estimation error should decline. Convergence is key to distinguishing causation from simple correlation.
+
+CCM uses a random sampling method to test multiple "versions" of each library size, sampling from the supplied library vectors to give a sense of the confidence intervals around prediction skill. However, just like before, because we're using multiple, simultaneous time series, we have to indicate the breaks in those time series so the algorithm does not try to make predictions spanning multiple time series. Also, to be more conservative, we'll use only a random half of each time series for attractor reconstruction, and apply it to predicting the other half.
+
+We can use CCM theory to build a causal network in our kelp forest algae/invertebrate system. We ask, "__Which San Nicolas Island kelp forest species are causally linked?__"
+
+***
+
+#### Initial CCM, *Macrocystis pyrifera*
+
+Let us start simple, and see if the two urchin species, red urchin *Strongylocentrotus franciscanus* and purple urchin *S. purpuratus* seem to have a causal influence on *Macrocystis pyrifera*, the giant kelp, and vice versa.
+
+From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The five physical forcing variables are represented in the first five columns, followed by the four brown algaes, and then the invertebrates. Many of them show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows predictive ability for all species.
+
+The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr") are it's own young (juvenile *Macrocystis*),the two understory kelps *Laminaria* and *Pterogophora californica*, sea surface temperature, and the warty sea cucumber *Parastichopus parvimensis*. The *Macrocystis*, in turn, displays a causal effect on *Laminaria*, another brown alga *Cystoseira osmundacea*, and purple urchin *Strongylocentrotus purpuratus*, and to a lesser extent red urchins *S. franciscanus*.
+
+*Laminaria* is cross-mapped well by almost all species in the dataset, providing evidence that it is an important driver of kelp forest dynamics at SNI, whether through potential competition (e.g., with other algaes), or potentially as an important food source for the herbivores.  We'll investigate these interactions in more detail below.
+
+Looking at the data from this exercise in another way, we can build an interaction web, and also see the number of links (causal or caused by) for each species (its network centrality).
