@@ -1,11 +1,14 @@
 ---
 title: "San Nicolas Island Kelp Forest: An Empirical Dynamic Exploration"
 author: "Owen Liu"
-date: "September 15, 2016"
-output: html_document
+date: "September 20, 2016"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
 ---
 
 ### 1. Introduction
+
 This project will use data from a long-term monitoring project at San Nicolas Island (SNI) to investigate dynamic interactions and predictability between kelp forest brown algae species (*Macrocystis pyrifera* and understory kelps), and various species of invertebrates.  We will see how well these species can predict each other's dynamics, and resolve competitive, mutualistic, and herbivorous species interactions across the timeframe of the dataset.  The species we will look at are:
 
 * **Brown algaes**
@@ -29,6 +32,7 @@ This project will use data from a long-term monitoring project at San Nicolas Is
 ***
 
 #### The San Nicolas Island Dataset
+
 San Nicolas Island is a small, remote island situated about 100 kilometers offshore from southern California. The benthic monitoring data herein have been collected more or less every six months for more than 30 years by the USGS and its Western Ecological Research Center (USGS-WERC), and in 2013 the datasets were made available publicly through Ecological Archives:
 
 Michael C. Kenner, James A. Estes, M. Tim Tinker, James L. Bodkin, Robert K. Cowen, Christopher Harrold, Brian B. Hatfield, Mark Novak, Andrew Rassweiler, and Daniel C. Reed. 2013. A multi-decade time series of kelp forest community structure at San Nicolas Island, California (USA). Ecology 94:2654. http://dx.doi.org/10.1890/13-0561.1
@@ -39,20 +43,24 @@ The datasets together represent a remarkable record of rocky reef dynamics, acro
 
 The island itself is small, about 14 kilometer long and 5 km wide. The seven sampling stations are situated around the island, some in pairs:
 
-![Figure 1. Map of the San Nicolas Island monitoring stations. From Kenner et al. (2013).](SNI_site_map.jpg)
+![Map of the San Nicolas Island monitoring stations. From Kenner et al. (2013).](SNI_site_map.jpg)
 
-```{r monitoring stations,echo=F}
+```{r, echo=F}
 library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+```{r monitoring stations,message=F,echo=F}
 W_D <- getwd()
 monitoring_stations <- read.csv(paste0(W_D,"/data/Table1_Monitoring_Stations.csv"))
 names(monitoring_stations) <- c("Station Number","Station Name","Latitude","Longitude","Mean Depth (m)","Date First Sampled")
 
-kable(monitoring_stations,align=c("c","l","c","c","c","l"),caption="Table 1. SNI Monitoring Stations.")
+kable(monitoring_stations,align=c("c","l","c","c","c","l"),caption="SNI Monitoring Stations.")
 ```
 
 Data is collected at each station during each monitoring period on the density and percent cover of benthic species (algae and invertebrates), and benthic and midwater fish species. Each of the seven monitoring sites has a number of permanent swaths along which data is collected every period:
 
-![Figure 2. Example layout of a SNI monitoring site, showing individual 10m swaths on either side of the 50m main transect line. From Kenner et al. (2013).](example_swaths.jpg)
+![Example layout of a SNI monitoring site, showing individual 10m swaths on either side of the 50m main transect line. From Kenner et al. (2013).](example_swaths.jpg)
 
 For full description of the monitoring methods, see the metadata from Kenner et al. (2013) at the DOI above. For our analyses, we use a subset of data, compiled from the benthic density raw data. Data for the 12 species of interest (above) were compiled, and to maximize the potential amount of dynamic information, the data from each swath at each station was treated as a separate time series, leaving us with 37 time series for each of the 12 species. Each time series contains 63 data points, corresponding to the 63 monitoring periods, one approximately every six months from Fall, 1980 to Fall, 2011. Individual time series of species density were normalized to have a mean of zero and a standard deviation of 1.
 
@@ -60,6 +68,7 @@ These first lines of code import the benthic data we need.
   
 ```{r setup, message=F}
 # Here are some R libraries we need
+library(quantreg)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -76,6 +85,7 @@ study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter",
 ```
 
 We also import a species name key, mostly for reference and plot labeling later.
+
 ```{r species key}
 # Species Key for all benthic density species (for reference)
 #*************************************
@@ -119,13 +129,14 @@ benthdat.block <- dat.long %>%
 ***
 
 #### Analytical Approach: Empirical Dynamic Modeling
+
 The datasets' long record and breadth of species allows for a detailed look at many aspects of kelp forest dynamics. The study of kelp forest community dynamics in California has a long history, with a wide breadth of empirical, experimental, and modeling literature documenting the structure and function of kelp forest communities, the bottom-up and top-down forces controlling relative species abundance, and characteristic kelp forest species interactions (e.g., Harrold and Reed, 1985; Foster and Schiel, 1985; Paine, 1992; Sala and Graham, 2002; Reed et al., 2011). Some more recent work has revealed nonlinear effects of certain drivers on kelp dynamics (Bell et al., 2015), and hinted at the importance of considering indirect interactions (Arkema et al., 2009). 
 
 The preponderance of evidence from the southern California kelp forest literature paints a view of these ecosystems as dynamic and complex, with the influences of physical oceanography and various biological forces interacting in a nonlinear manner to structure kelp forest communities. In the analysis below, we employ a set of methods, jointly called Empirical Dynamic Modeling (EDM), that has been specifically designed to describe nonlinear dynamic systems of multiple variables. To my knowledge, EDM has never before been applied to describe kelp forest data.
 
 Briefly, EDM is based on the idea that a dynamic system can be reconstructed from time series of observations of that system. [This video animation](https://youtu.be/fevurdpiRYg) gives a good introduction to this type of reconstruction. Basically, we can interpret a dynamic system as existing in multivariate coordinate space, or state-space, where each member of the dynamic system is one dimension.  If a system has predictable dynamics, a multidimensional "manifold" or "attractor" emerges, where the system travels in time along the multidimensional attractor, and its states are recorded in each variable's time series as projections onto one-dimensional axes (see the video animation). In a mathematical theorem attributed to Takens (1981), it was shown that one can reconstruct a "shadow" version of the original manifold using lagged versions of just one of the state variables, like a one-dimensional shadow cast by the system as it moves along the manifold. The reconstruction should maintain the mathematical properties of the original attractor.  For example, in the image below, we see an attractor on the left formed from the coupled interactions of three variables (we could call them species) evolving through time. On the right, we see a shadow reconstruction of that attractor using two lags of just the y-variable. The two versions of the attractor maintain similar topological properties, and we can infer properties of the manifold on the left by examining the manifold on the right. 
 
-![Figure 3. (Left) An attractor in a 3-dimensional dynamic system, composed of variables x, y, and z. (Right) A reconstruction of the original manifold using lagged versions of just one variable (y). From Deyle et al. (2011).](lorenz_example_deyle.png)
+![(Left) An attractor in a 3-dimensional dynamic system, composed of variables x, y, and z. (Right) A reconstruction of the original manifold using lagged versions of just one variable (y). From Deyle et al. (2011).](lorenz_example_deyle.png)
 
 Reconstructing these manifolds and using them to explore the properties of dynamic systems is a form of state-space reconstruction. The motivation behind state-space reconstruction is that by building a facsimile of the true attractor, we can use it to predict the dynamics of individual variables and investigate how they are related. Takens' original theorem and extensions of it (especially see Sugihara and May, 1990; Sugihara, 1994; Deyle et al., 2011; Sugihara et al., 2012) provide specific methods for examining state-space reconstructions, and their numerous and flexible applications. Together, the methods arising from this work have become known as Empirical Dynamic Modeling (EDM), and it is these tools that we use in the following analyses. The methods are "empirical" in the sense that we use recorded time series data to reveal the underlying dynamic system, with no *a priori* assumptions about the relationships between variables, except that they are members of the system (which we also test for). Because of this approach, EDM can be an ideal option for exploring nonlinear and complex dynamic systems, where other restrictive assumptions are not appropriate.
 
@@ -134,6 +145,7 @@ In the analysis that follows, in each step that involves a new type of EDM metho
 ***
 
 #### Note about data processing
+
 Usual best practice for EDM is to create normalized time series, so that state-space reconstructions are not distorted by differences in orders of magnitude between variables. In addition, we concatenate each species/station/swath time series into one long time series for each species, while preserving time indicator (variable 'period') and a site identifier, to ensure that we do not "cross" the boundaries of replicate time series in analyses. Empirical dynamic modeling can use multiple spatial replicates in lieu of increased length of individual time series, to maximize the dynamic information that can be drawn from the system (see Hsieh et al., 2008; Clark et al., 2015). Because the monitoring methods and species are the same across the island, and SNI itself is small, we choose to concatenate the available time series into one long time series for each species. However, we do examine the validity of this assumption in Step 3, and the reader should bear in mind that these data are from multiple transects across multiple stations around SNI.
 
 ***
@@ -184,6 +196,7 @@ phys.vars <- c("mei.mean","pdo.mean","npgo.mean","waves.max","sst.mean")
 phys.vars.key <- data_frame(long=c("Multivariate ENSO Index","Pacific Decadal Oscillation","North Pacific Gyre Oscillation","Significant Wave Height","Sea Surface Temperature"),dataset="Physical",short=phys.vars, plotting=c("(P) MEI","(P) PDO","(P) NPGO","(P) Max Hs","(P) SST"))
 
 fullkey <- bind_rows(spp.key.bdens,phys.vars.key)
+fullkey <- bind_rows(fullkey, data_frame(long="NA",dataset="NA",short="const",plotting="Constant"))
 ```
 
 ***
@@ -202,13 +215,13 @@ First, we use simplex projection to get a sense of system dimensionality for eac
 
 #### Simplex Projection and Embedding Dimensions
 
-First, for each species/variable separately, we will search for signals of deterministic behavior using simplex projection. In simplex projection, we reconstruct a shadow manifold in *E* dimensions, where *E* is the number of variables, or number of progressive lags of a single variable used in the reconstruction. *E* is called the __*embedding dimension*__. The *E*-length vectors, for example $\it{\bf{x_{t}}} = <x_t,x_{t-1},x_{t-2}>$ are points on the attractor, and the set of *E*-length vectors used for the reconstruction is called the __*library*__. To predict $\it{\bf{x_{t+1}}}$ , the simplex algorithm finds the *E* +1 nearest neighbors of $\it{\bf{x_{t}}}$ in the state space, and the prediction $\it{\bf{\hat{x}_{t+1}}}$ is the average of the nearest neighbors' values at $\it{t+1}$, weighted by their Euclidean distance from $\it{\bf{x_{t}}}$ at $\it{t}$. This is the essence of simplex projection: a forecast for a given point in state space is surmised from the forward trajectories of observed nearby points.
+First, for each species/variable separately, we will search for signals of deterministic behavior using simplex projection. In simplex projection, we reconstruct a shadow manifold in *E* dimensions, where *E* is the number of variables, or number of progressive lags of a single variable used in the reconstruction. *E* is called the __*embedding dimension*__. The *E*-length vectors, for example $\it{\bf{x_{t}}} = <x_t,x_{t-1},x_{t-2}>$ are points on the attractor, and the set of *E*-length vectors used for the reconstruction is called the __*library*__. To predict $\it{\bf{x_{t+1}}}$, the simplex algorithm finds the *E* +1 nearest neighbors of $\it{\bf{x_{t}}}$ in the state space, and the prediction $\it{\bf{\hat{x}_{t+1}}}$ is the average of the nearest neighbors' values at $\it{t+1}$, weighted by their Euclidean distance from $\it{\bf{x_{t}}}$ at $\it{t}$. This is the essence of simplex projection: a forecast for a given point in state space is surmised from the forward trajectories of observed nearby points.
 
 In descriptive terms, this is akin to asking, "When the system has been in a state like this before, what happened next?" For example, if we are interested in predicting *Macrocystis* density next year, we might take the current three-year density trend (this year, last year, and the year before, *E*=3) and compare it to a subset of times in the past when three-year dynamics looked similar to today. Our prediction, logically, would be the average of that subset, projected foreward one year and weighted by their similarity to the current trend.
 
 By varying the value of *E*, we can determine what the best embedding dimension is for each variable in our analysis, essentially a proxy for the number of variables that best "unfolds" or best represents the shadow attractor. We can measure the "skill" of an embedding by comparing the estimated forecasts $\it{\bf{\hat{x}_{t+1}}}$ with the true values $\it{\bf{x_{t+1}}}$, and we report it with $\it{\bf{\rho}}$, the Pearson correlation coefficient between predictions and observations. To avoid in-sample fitting, we use leave-one-out cross-validation scheme, removing one vector at a time from the library, and predicting its dynamics from the other library vectors.
 
-```{r univariate simplex}
+```{r univariate simplex,fig.height=10,fig.width=7}
 # For all the steps in the univariate analyses, we need an indication of the breaks in the different sites, or concurrent time series (see Note about data processing, above).
 
 # This piece of code holds the row numbers of the first and last element of each time series, in order to avoid "crossing" time series in later analyses
@@ -224,7 +237,7 @@ segs <- select(segs_sites,-site)
 simp.list <- list()
 
 # Run simplex projection for each species, and plot output
-par(mfrow=c(2,2))
+par(mfrow=c(3,2))
 for(i in 1:length(study_spp)) {
   spp <- study_spp[i]
   dat <- multiblock %>% select(matches(spp)) %>% as.data.frame()
@@ -234,15 +247,17 @@ for(i in 1:length(study_spp)) {
   # Plot embedding dimension vs. predictive ability (rho)
   plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
 }
+```
 
+```{r, echo=F}
 rm(spp,dat,out)
 ```
 
 We also need to run simplex projection for the physical variables, in order to establish their optimal embeddings. As a reminder, the physical variables are the same across all biological spatial replicates. Therefore, there are fewer library vectors for the physical variables, especially since there is some missing data for some variables.
 
-```{r simplex physical variables}
+```{r simplex physical variables,fig.height=10,fig.width=7}
 # Run simplex for each physical variable
-par(mfrow=c(2,2))
+par(mfrow=c(3,2))
 for(i in 1:length(phys.vars)) {
   ind <- phys.vars[i]
   dat <- multiblock %>% select(matches(ind))
@@ -252,8 +267,9 @@ for(i in 1:length(phys.vars)) {
   # Plot embedding dimension vs. predictive ability (rho)
   plot(out$E,out$rho,type="l",main=fullkey$long[match(ind,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
 }
+```
 
-
+```{r, echo=F}
 rm(ind,dat,out)
 ```
 
@@ -277,12 +293,12 @@ bestE <- sapply(simp.list,function(x) x$E[x$rho==max(x$rho)])
 
 We also want to look at prediction decay for each variable, which is one piece of evidence that a dynamic system is nonlinear. Using the best *E* identified in the previous step, we attempt to make predictions increasing far into the future, instead of just one period ahead. A nonlinear system should show decreasing predictive power with increasing prediction horizon. This phenomenon is analagous to the "butterfly effect", where in a nonlinear system, trajectories in state-space are expected to diverge over time. To examine this effect, we hold *E* constant, and proceed with simplex projection, but varying the prediction horizon, $t_p$.
 
-```{r prediction horizon}
+```{r prediction horizon,fig.height=10,fig.width=7}
 # List to hold prediction horizon results
 tp.list <- list()
 
 par(mfrow=c(2,2))
-plot.new()
+dev.new()
 for(i in 1:length(study_spp)) {
   spp <- study_spp[i]
   dat <- multiblock %>% select(matches(spp))
@@ -292,7 +308,9 @@ for(i in 1:length(study_spp)) {
   # Plot time horizon vs. predictive ability (rho)
   plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
 }
+```
 
+```{r, echo=F}
 rm(spp,dat,out)
 ```
 
@@ -308,10 +326,10 @@ As a side note, with $\it{\bf{\theta}}>0$, although the set library vectors rema
 
 For prediction of each variable using S-maps, we can again use the optimal embedding dimension, *E*, found through simplex projection, and we plot the tuning parameter $\it{\bf{\theta}}$ against $\it{\bf{\rho}}$ to look for evidence of nonlinear dynamics.
 
-```{r univariate s_maps}
+```{r univariate s_maps,fig.height=10,fig.width=7}
 smap.list <- list() # list to store output
 
-par(mfrow=c(2,2))
+par(mfrow=c(3,2))
 for(i in 1:length(study_spp)) {
   spp <- study_spp[i]
   dat <- multiblock %>% select(matches(spp))
@@ -319,8 +337,11 @@ for(i in 1:length(study_spp)) {
   smap.list[[spp]] <- out
   
   # Plot theta dimension vs. predictive ability (rho)
-  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")),ylab=expression(paste("Skill, ",rho)))
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
 }
+```
+
+```{r, echo=F}
 rm(spp,dat,out)
 ```
 
@@ -386,7 +407,9 @@ for(i in 1:length(study_spp)) {
   # For each species, return matrix of sites' cross-predictability
   dat.comb.check[[spp]] <- out.mat
 }
+```
 
+```{r, echo=F}
 rm(spp,i,j,maxrho,minp,lib,pred,dat,out,out.mat,simp)
 ```
 
@@ -438,7 +461,7 @@ Our univariate analyses have revealed strong evidence of a nonlinear, but predic
 
 #### Introduction to Convergent Cross Mapping
 
-Generalizations of Takens' theorem indicate that if two variables (in our case, species or physical variables) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence (see Sugihara et al., 2012; Deyle et al., 2013; Ye et al., 2015; Clark et al., 2015) . In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to forecast another. CCM works just like univariate simplex projection that we did in Step 3, except that separate variables are used for library and prediction vectors. If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, the *causal effect of A on B is determined by how well B cross-maps A*. In this way, the inference from cross-mapping is the converse direction of causation.
+Generalizations of Takens' theorem indicate that if two variables (in our case, species or physical variables) are part of the same dynamic system, their individual dynamics should reflect their relative causal influence (see Sugihara et al., 2012; Deyle et al., 2013; Ye et al., 2015; Clark et al., 2015) . In other words, if one variable (for example, giant kelp), is casually forced by another (sea urchins), that forcing should leave a signature on the giant kelp time series. Convergent cross mapping (CCM) tests for causation by using the attractor/manifold built from the time series of one variable to predict another. CCM works just like univariate simplex projection that we did in Step 3, except that separate variables are used for library and prediction vectors. In addition, we normally predict contemporaneous values of the other variable, instead of projecting one step forward (prediction horizon $t_{p}=0$). If the attractor can accurately (based on out-of-sample prediction skill, just as before) predict the dynamics of the second variable, we can claim that the second variable has a causal influence on the first.  In other words, the *causal effect of A on B is determined by how well B cross-maps A*. In this way, the inference from cross-mapping is the converse direction of causation. In our example, if sea urchins drive giant kelp,the dynamic information from the urchin time series should be reflected in the kelp dynamics, and kelp should significantly cross-map the urchins.
 
 Cross-mapping can distinguish unidirectional forcing (A forces B but B does not force A) from bi-directional (A and B force each other). It can also resolve transitive causal chains (A causes B causes C, see Fig. 4 in Sugihara et al., 2012 for an illustration). To look for a causal signal, we plot predictive skill  $\it{\bf{\rho}}$ against library size (the number of embedded vectors used to construct the attractor). There are two criteria for CCM to establish causality. First, and most obviously, predictive cross-map skill using all available data should be significantly greater than zero. Second, that predictability should be convergent.  Convergence means that cross-mapped estimates improve with library length, because the attractor is more fully resolved and therefore estimation error should decline. Convergence is key to distinguishing causation from simple correlation.
 
@@ -512,7 +535,7 @@ purp_xmap_mac_means <- purp_xmap_mac %>% group_by(lib_size) %>%
 
 As mentioned above, we look for causation by plotting library size versus predictive skill for *Macrocystis* and red and purple urchins.
 
-```{r mac x red and purp plots, echo=F}
+```{r mac x red and purp plots, echo=F,fig.height=4}
 mac_x_red_plot <- ggplot()+
   geom_line(data=mac_xmap_red_means,aes(x=lib_size,y=mean.rho,color="Macrocystis xmap S. Fransciscanus"))+
   geom_ribbon(data=mac_xmap_red_means,aes(x=lib_size,ymin=lower,ymax=upper,fill="Macrocystis xmap S. Fransciscanus"),alpha=0.3)+
@@ -602,12 +625,15 @@ for(i in 1:n_row) {
     }
   }
 }
+```
+
+```{r, echo=F}
 rm(p1,p2,tempE,temp,rhomean)
 ```
 
-Raster plot of output:
+We can make a raster plot of the output.
 
-```{r CCM raster, echo=F}
+```{r CCM raster, include=F,message=F}
 # keep only signficant cross-mappings
 xmap_mat <- xmap_mat*ptot.mat %>% as.data.frame()
 xmap_rast <- xmap_mat %>% 
@@ -645,7 +671,9 @@ for(i in 1:length(study_spp)) {
 rm(spp,vars)
 ```
 
-From this plot, we can draw a few conclusions.  The predictors (causal variables) lie along the x-axis (columns), and the variables they cause are on the y-axis (rows). The five physical forcing variables are represented in the first five columns, followed by the four brown algaes, and then the invertebrates. Many physical variables show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows a causal link to all species.
+![Kelp Forest Convergent Cross Mapping. Columns are forcing variables, rows are predicted variables. Gray indicates a lack of significant causual signal, and warmer colors represent higher cross-map skill.](xmap_all.png)
+
+From this plot, we can draw a few conclusions. The five physical forcing variables are represented in the first five columns, followed by the four brown algaes, and then the invertebrates. Many physical variables show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows a causal link to all species.
 
 The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr" row) are it's own young (juvenile *Macrocystis*),the two understory kelps *Laminaria* and *Pterogophora californica*, sea surface temperature, and the warty sea cucumber *Parastichopus parvimensis*. The adult *Macrocystis pyrifera* in turn has a causal effect on *Laminaria*, another brown alga *Cystoseira osmundacea*, purple urchin *Strongylocentrotus purpuratus*, and red urchins *S. franciscanus*.
 
@@ -653,7 +681,9 @@ The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr" row) 
 
 Looking at the data from this exercise in another way, we can build an interaction web, and also see the number of links (causal or caused by) for each species (its network centrality).
 
-```{r causal web and interactions, echo=F}
+![Kelp Forest Causal Web. Each node represents a species, with outgoing (incoming) causal connections identified in CCM analysis.](causal_web.png)
+
+```{r causal web and interactions, echo=F, include=F,message=F}
 library(igraph) # R Package for network graphing and analysis
 
 # Add NAs for connections in to physical variables (since we want them just to be exogenous)
@@ -685,317 +715,34 @@ plot(g,asp=0.8, vertex.label.color="black", vertex.label.cex=0.8, edge.arrow.siz
 legend(x=-1, y=-1, c("Brown Algae","Echinoderms", "Gastropods","Physical Forcing"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen","gray70"), pt.cex=2, cex=.8, bty="n", ncol=1)
 ```
 
-In this network, each node represents a variable, and the numbers associated with each are the number of causal connections in the web, outgoing and (incoming). The potential maximum incoming connections is 15 (16 total variables minus itself), and the maximum outgoing is 10 (subtracting the physical variables).  Although this is a busy network, it suggests two things to me, both of which agree with much previous work:
+In this network, each node represents a variable, and the numbers associated with each are the number of causal connections in the web, outgoing and (incoming). The potential maximum incoming connections is 15 (16 total variables minus itself), and the maximum outgoing is 10 (subtracting the physical variables). We can make a number of observations from this web. For example:
 
-* Kelp forests are dynamically complex, with an intricate network of causal interactions between species. There are many bi-directional signals, and therefore not as much clear unidirectional causation. This is somewhat to be expected, as we would expect that, e.g., the algaes and herbivores would affect each other.
+* Kelp forests are dynamically complex, with an intricate network of causal interactions between species. There are many bi-directional signals, and therefore not as much clear unidirectional causation. This is not surprising, as we would expect that, e.g., the algaes and herbivores would affect each other.
 * Macrocystis itself (a primary producer) is central to dynamics, having the most total connections, followed by the two urchin species, the gastropod *Megastraea undosa*, and the understory kelps.
 
-Given that these species are so interconnected, it may be that we could better predict dynamics, and can take a step towards a more mechanistic understanding of the interactions suggested from the CCM analysis, by building composite attractors from multiple species' time series. In other words, so far we have examined univariate embeddings to explore dimensionality and nonlinearity of individual variables, and then looked at pairwise predictability of species' dynamics. Informed by the outcomes of these univariate and cross-mapping analyses, we can explicitly examine multivariate models.
+It is clear, even from our constrained food web, that the dynamics of each species rely on almost all other species, and hence a comprehensive understanding of a kelp forest communities necessarily requires consideration of not just linear trophic interactions, but an appreciation of the full web of interacting species. Given that these species are so interconnected, it may be that we could better predict dynamics, and can take a step towards a more mechanistic understanding of the interactions suggested from the CCM analysis. 
+
+We now have evidence that adult *Macrocystis pyrifera* drives *Pterogophora californica* dynamics, but is their interaction competitive? Does the strength of the interaction change when more nutrients are available? Do the gastropod *Megastraea undosa* and the red urchin *Strongylocentrotus fransciscanus* compete? Or do they perhaps display apparent mutualism through their mediating effects on algal competetive interactions?  Informed by the outcomes of the univariate and cross-mapping analyses, we can explicitly examine the strength and direction of species' interactions through time by building composite attractors from multiple species' time series.
 
 This is our next task.
 
+***
+
 ### 5. Multivariate Models
 
-Similar to the theory behind CCM, extensions of Takens' theorem (Deyle et al., 2011) provide the basis for multivariate state-space reconstruction. In CCM, we usually use lagged vectors of one time series (e.g., kelp) to cross-map contemporaneous values of another time series (e.g., sea urchins). In the logic of CCM, if the attractor built from the lagged kelp time series can predict sea urchin dynamics, we can conclude that dynamic information from the urchin is encoded in the kelp, and that urchin dynamics force kelp dynamics.
+Every EDM method we have used so far involves reconstructing an attractor in state-space and then examining that attractor to make predictions. In Step 3, we used single time series and their lags to build attractors, and examined the attractors for evidence of the degree of dimensionality, predictability, and nonlinearity. In Step 4, we built attractors from one species and searched for the signature of other species' dynamics encoded in those attractors, leading to inferences about causation. 
 
-The multivariate embeddings consist of multivariate vectors instead of lagged univariate vectors. In a way, this makes sense. If a dynamic system is viewed as an attractor in multivariate space, then the different variables in the system "see" the attractor dynamics from different angles. Individual members (variables) encode univariate dynamic information as the system moves along the attractor, like shadows cast on one-dimensional planes. This is the whole logic behind state-space reconstruction: to reconstruct a facsimile of the true attractor and use it to predict the dynamics of individual variables. Accordingly, we should be able to reconstruct the attractor in a number of ways: through univariate methods (as in Step 3); by using lagged versions of another variable (as in CCM); or by using multiple other variables that we feel confident are members of the same dynamic system.
+Multivariate models have the same structure, except instead of using single variables to reconstruct the attractors, we use contemporaneous values of multiple variables. Instead of library vectors/points in state-space taking the form of, for example, $<x_t,x_{t-1},x_{t-2}>$, they now are formed in true multivariate space, e.g. $<Kelp_{t},Urchin_{t},Nutrients_{t}>$. Using the normalized time series, we will build library vectors that each include the variable we are trying to predict, as well as other causal variables illuminated by our CCM analysis. Then we use S-maps to forecast the target variable using leave-one-out cross-validation just as in Step 3.
 
-Using the normalized time series, we'll build library vectors that each include the variable we're trying to predict, as well as other causal variables illuminated by our CCM analysis. Then we use S-maps to forecast the target variable using leave-one-out cross-validation.
-
-We do not want to just throw all variables into our multivariate reconstructions haphazardly, and risk over-fitting and excessive complexity. Instead, we can add variables one by one, to sequentially identify the most predictive variables. To start, we will focus on predicting the dynamics of *Macrocystis pyrifera*, both "adult" and "juvenile" plants, and the candidate variables for model selection will be those that were identified as causal in the CCM analysis (Step 4).
-
-#### Macrocystis Forward Model Selection
-
-```{r mac forward selection}
-
-# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
-multi_vars <- c(ccm.sig.vars[["mac"]],"mac")
-
-# Number of model selection steps to do
-n_steps <- length(multi_vars)
-
-selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
-
-# timer for the analysis
-ptm <- proc.time()
-for(i in 1:n_steps) {
-  # candidate variables are all those that have not yet been selected
-  poss_vars <- setdiff(multi_vars,selected.vars$var)
-  
-  # Vector to hold output rho's
-  out.rho <- numeric(length(poss_vars))
-  names(out.rho) <- poss_vars
-  # Vector to hold output S-map theta parameters
-  out.theta <- numeric(length(poss_vars))
-  names(out.theta) <- poss_vars
-  
-  # Find the single variable that best predicts Macrocystis dynamics one step ahead
-  for(j in 1:length(poss_vars)) {
-    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
-    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
-    
-    # Run S-map with varying theta
-    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "mac",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
-    
-    # Best rho and theta from S-map analysis
-    out.rho[j] <- max(temp$rho,na.rm=T)
-    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
-  }
-  
-  # Select the variable that maximizes predictive skill
-  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
-  selected.vars$cum.rho[i] <- max(out.rho)
-  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
-}
-proc.time()-ptm
-selected.vars
-
-# Plot results
-plot.new()
-par(mfrow=c(1,1))
-plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
-
-# Save the parameters from the best model
-best.modls <- list()
-best.modls[['mac']] <- selected.vars
-```
-
-The model selection exercise peaks in forecast skill with nine included variables. There are many interesting observations from this exercise:
-
-* The model selection itself displays a rapid rise in predictive skill with the first six or seven steps, followed by a long plateau, as seen in the plot above. This suggests that all of our candidate variables are potentially helpful predictors, as no addition of a variable significantly degrades predictive skill. This observation lends confidence to our choice of using CCM analysis to pick candidate variables.
-* Moreover, the fact that after an intermediate number of included variables, the model stops significantly increasing in skill, indicates that some variables identified with CCM may constitute redundant dynamic information. This could occur because of CCM transitivity. For example, even though *Parastichopus parvimensis* significantly cross-mapped *Macrocystis*, its useful dynamic information may already be captured in the selected model through SST, NPGO, and young *Macrocystis*, all variables that mapped to *Parastichopus* in CCM. Therefore, including *Parastichopus* as well in the model does not increase model skill (but also does not degrade skill appreciably). 
-* The best model has a skill of greater than 0.7 and consists of a reconstruction with four physical variables, and five biological variables: two herbivores,the red urchin *Strogylocentrotus fransciscanus* and the wavy turban snail *Megastreaea undosa*; the alga *Cystoseira osmundacea*; and both *Macrocystis pyrifera* variables.
-* Model selection of the optimal degree of nonlinearity ($\theta$ parameter greater than zero) maintains our earlier finding that *Macrocystis* dynamics are best understood as nonlinear and state-dependent.
-* The selection of these variables suggests, similarly to the CCM results, that both bottom-up and top-down ecological interactions are important for driving *Macrocystis* dynamics, as well as competition.
-* The two top-selected physical variables are SST and the NPGO, both of which are generally associated with nutrient levels.  Higher SST generally corresponds to lower levels of available nitrate (Zimmerman and Kremer 1984), while positive values of the NPGO correspond to increased upwelling and greater availability of nutrients (Di Lorenzo et al., 2008).
-* The selection of both adult and young *Macrocystis* as helpful predictors is not surprising. Our prediction of kelp density should certainly be informed by the current density of adult and juvenile plants.
-
-We can see one illustration of model skill by comparing the best multivariate model with the best univariate (i.e. using lags of the *Macrocystis* time series) model.
-
-```{r univar vs multivar prediction mac, echo=F}
-# Best univariate S-map model
-univar.mod <- s_map(multiblock$mac,lib=as.matrix(segs),E=6,theta=1.5,stats_only = F, silent=T)
-univar.out <- univar.mod[[1]]$model_output
-
-# Run best multivariate model for M. pyrifera, saving actual model output (option stats_only=F)
-mac.multi.vars <- selected.vars$var[1:9]
-mac.multi.mod <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=mac.multi.vars,target_column = "mac",stats_only = F,method="s-map",theta=4,num_neighbors = 0)
-mac.multi.out <- mac.multi.mod[[1]]$model_output
-
-# Draw the scatterplot
-par(mfrow=c(1,1),xpd=F)
-plot_range <- range(c(univar.out$obs, univar.out$pred), na.rm = TRUE)
-plot(univar.out$obs,univar.out$pred,xlab="Observed",ylab="Predicted",col="red",xlim=plot_range,ylim=c(-1,4),pch=1,main=expression(paste("Best Univariate vs. Multivariate Models of Macrocystis Dynamics")))
-
-# Add best multivariate fit
-points(mac.multi.out$obs,mac.multi.out$pred,col="blue",pch=2)
-# "Perfect fit", 1:1 line
-abline(a=0,b=1,lty=1,col="gray40")
-# Best fit line for univariate and multivariate models
-abline(lm(univar.out$pred ~ univar.out$obs), col = "red", lty = 3, lwd = 3)
-abline(lm(mac.multi.out$pred ~ mac.multi.out$obs),col="blue", lty=3, lwd=3)
-
-# Legend
-legend("topleft",legend=c("best univariate model","best multivariate model","1:1 line"),col=c("red","blue","gray40"),lty=c(3,3,1),lwd=c(3,3,2))
-```
-
-In this plot, the gray solid line represents the theoretical perfect fit (predictions equal observations), while the red and blue points are the output from the best univariate and multivariate models, respectively. The multivariate model performs substantially better, especially at *Macrocystis* densities around its mean (+/- 1 in normalized units, corresponding to +/- 1 standard deviation).
-
-#### Juvenile Macrocystis Model
-
-At this point, we have established the important variables driving adult *Macrocystis pyrifera* dynamics, which include physical forcing, other primary producers, and kelp forest herbivores. In Step 6, we will take this one step further by explicitly examining the direction, magnitude, and nonlinear shape of the interactions identified in the multivariate S-map model. However, before we get there, we will build three more multivariate models, of other representative kelp forest species, in order to compare them to the adult *Macrocystis* model. The first model to select is for juvenile *Macrocystis*, which will allow us to distinguish between the variables controlling the dynamics of the two life stages of this dominant species. Is herbivory important for young *Macrocystis* dynamics? Physical forcing? Competition for space with understory algas like *Laminaria* and *Pterogophora*?
-
-We proceed with model selection in the same way as for adult *Macrocystis*, beginning with all of the potential forcing variables identified in CCM, and adding the most informative variable to the model in each step.
-
-```{r young mac forward selection}
-# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
-multi_vars <- c(ccm.sig.vars[["ymac"]],"ymac")
-
-# Number of model selection steps to do
-n_steps <- length(multi_vars)
-
-selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
-
-# timer for the analysis
-ptm <- proc.time()
-for(i in 1:n_steps) {
-  # candidate variables are all those that have not yet been selected
-  poss_vars <- setdiff(multi_vars,selected.vars$var)
-  
-  # Vector to hold output rho's
-  out.rho <- numeric(length(poss_vars))
-  names(out.rho) <- poss_vars
-  # Vector to hold output S-map theta parameters
-  out.theta <- numeric(length(poss_vars))
-  names(out.theta) <- poss_vars
-  
-  # Find the single variable that best predicts Macrocystis dynamics one step ahead
-  for(j in 1:length(poss_vars)) {
-    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
-    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
-    
-    # Run S-map with varying theta
-    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "ymac",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
-    
-    # Best rho and theta from S-map analysis
-    out.rho[j] <- max(temp$rho,na.rm=T)
-    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
-  }
-  
-  # Select the variable that maximizes predictive skill
-  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
-  selected.vars$cum.rho[i] <- max(out.rho)
-  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
-}
-proc.time()-ptm
-selected.vars
-
-# Plot results
-plot.new()
-par(mfrow=c(1,1))
-plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Juvenile Macrocystis Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
-
-# Save the parameters from the best model
-best.modls[['ymac']] <- selected.vars
-```
-
-The best forward-selected model for young *Macrocystis* is higher-dimensional than for adult *Macrocystis*, and additional variables continue to add predictive ability until 11 variables are included: 4 of the 5 physical variables, the algas *Cystoseira* and *Laminaria*, and three herbivores, in addition to the two *Macrocystis* variables. Again, this model suggests important forcing from physical parameters, competition, and herbivory.
-
-#### Laminaria Model
-
-Now we run a model for *Laminaria*, the understory kelp. What's its story?
-
-```{r laminaria forward selection}
-# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
-multi_vars <- c(ccm.sig.vars[["lam"]],"lam")
-
-# Number of model selection steps to do
-n_steps <- length(multi_vars)
-
-selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
-
-# timer for the analysis
-ptm <- proc.time()
-for(i in 1:n_steps) {
-  # candidate variables are all those that have not yet been selected
-  poss_vars <- setdiff(multi_vars,selected.vars$var)
-  
-  # Vector to hold output rho's
-  out.rho <- numeric(length(poss_vars))
-  names(out.rho) <- poss_vars
-  # Vector to hold output S-map theta parameters
-  out.theta <- numeric(length(poss_vars))
-  names(out.theta) <- poss_vars
-  
-  # Find the single variable that best predicts Macrocystis dynamics one step ahead
-  for(j in 1:length(poss_vars)) {
-    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
-    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
-    
-    # Run S-map with varying theta
-    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "lam",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
-    
-    # Best rho and theta from S-map analysis
-    out.rho[j] <- max(temp$rho,na.rm=T)
-    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
-  }
-  
-  # Select the variable that maximizes predictive skill
-  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
-  selected.vars$cum.rho[i] <- max(out.rho)
-  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
-}
-proc.time()-ptm
-selected.vars
-
-# Plot results
-plot.new()
-par(mfrow=c(1,1))
-plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Laminaria Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
-
-# Save the parameters from the best model
-best.modls[['lam']] <- selected.vars
-```
-
-#### Purple Urchin Model
-
-And, finally, one for a representative and abundant herbivore, the purple urchin *Strongylocentrotus purpuratus*
-
-```{r purple urchin forward selection}
-# We pull the potential model variables straight from the CCM analysis. These are all the variables that showed a significant forcing influence, and we add the variable itself
-multi_vars <- c(ccm.sig.vars[["purp"]],"purp")
-
-# Number of model selection steps to do
-n_steps <- length(multi_vars)
-
-selected.vars <- data_frame(var=rep(NA,n_steps),cum.rho=numeric(n_steps),theta=numeric(n_steps))
-
-# timer for the analysis
-ptm <- proc.time()
-for(i in 1:n_steps) {
-  # candidate variables are all those that have not yet been selected
-  poss_vars <- setdiff(multi_vars,selected.vars$var)
-  
-  # Vector to hold output rho's
-  out.rho <- numeric(length(poss_vars))
-  names(out.rho) <- poss_vars
-  # Vector to hold output S-map theta parameters
-  out.theta <- numeric(length(poss_vars))
-  names(out.theta) <- poss_vars
-  
-  # Find the single variable that best predicts Macrocystis dynamics one step ahead
-  for(j in 1:length(poss_vars)) {
-    # For each iteration, we use all the previously selected variables, plus one new candidate variable, to create reconstructions
-    temp_vars <- c(selected.vars$var[!is.na(selected.vars$var)],poss_vars[j])
-    
-    # Run S-map with varying theta
-    temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=temp_vars,target_column = "purp",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),silent=T)
-    
-    # Best rho and theta from S-map analysis
-    out.rho[j] <- max(temp$rho,na.rm=T)
-    out.theta[j] <- temp$theta[temp$rho==max(temp$rho)][1]
-  }
-  
-  # Select the variable that maximizes predictive skill
-  selected.vars$var[i] <- names(out.rho)[out.rho==max(out.rho)]
-  selected.vars$cum.rho[i] <- max(out.rho)
-  selected.vars$theta[i] <- out.theta[out.rho==max(out.rho)]
-}
-proc.time()-ptm
-selected.vars
-
-# Plot results
-plot.new()
-par(mfrow=c(1,1))
-plot(1:n_steps,selected.vars$cum.rho,type="l",main="Forward Model Selection for Purple Urchin Dynamics",xlab="Model Selection Step (= Number of Variables Included)",ylab=expression(paste("Model Predictive Skill, ",rho)))
-
-# Save the parameters from the best model
-best.modls[['purp']] <- selected.vars
-```
-
-### 6. Tracking Real-time Species Interactions
-
-From the results of the cross-mapping and multivariate modeling exercises, it is clear that the algal and invertebrate species in the San Nicoloas Island kelp forest system interact with one another in nonlinear, complex, but predictable ways. Now that we have a multivariate predictive model for a number of species' dynamics, we can look at these phenomena in more detail, and answer the questions:
-
-  * *Are interactions between species constant over time (in both direction and magnitude)?*
-  * *If not, are there predictable conditions under which we may expect a certain type of interaction (e.g., competition vs. facilitation)?*
-
-Examples of more species-specific questions include:
-
-  * *Can we distinguish between times of top-down vs. bottom-up forcing of Macrocystis dynamics? What are their relative strengths?*
-  * *Are there different dynamics controlling juvenile and adult Macrocystis?*
-  * *What are the conditions under which the invertebrates compete vs. facilitate one another?*
-  
-The exploration of these questions will give us insight into a more mechanistic view of the nonlinear interactions in this dynamic system.
-
-For this exercise, we use S-maps to investigate the interactions strengths between physical variables and species, and species with one another, in real time. S-maps actually calculates sequential "Jacobian" community matrices (the local effect at each point on the attractor of each variable on every other variable). By explicitly recording these coefficients for each predicted vector, we can reveal how species interactions are changing over time. The logic and calculations behind this are described in Sugihara (1994) and Deyle et al. (2016).
+***
 
 #### Single Embedding, Multiple Versions
-To compare dynamic interactions across species, it may be best to use one embedding (i.e. a uniform set of variables), and apply it to each species.  Therefore, we are controlling for the same set of interactions across species.
 
-We'll choose a subset of species which all show causal links (in both directions). We can do this with a subset of our cross-mapping exercise from step 4. We include the NPGO index as the only physical variable that was significantly mapped by all the biological variables.
+To explore dynamic interactions across species, it may be best to use just one multivariate attractor, and then optimize the S-maps for each species separately. Therefore, we are controlling for the same set of interactions across species. Another option would be to separately select the most predictive variables from our set for each species, but that might degrade our ability to draw conclusions.
 
-```{r sub smap, echo=F}
+We choose a subset of species which all show causal links to each other. We can do this with a subset of our cross-mapping exercise from Step 4. We include the NPGO index as the only physical variable that was significantly mapped by all the biological variables.
+
+```{r sub smap, echo=F,message=F}
 xmap_subset <- function(subspp) {
   subrast <- xmap_rast %>% 
     filter(predictee %in% subspp & predictor %in% subspp)%>%
@@ -1018,60 +765,73 @@ cohesive.CCM.plot
 ggsave(plot=cohesive.CCM.plot,filename="xmap_subset.png")
 ```
 
-This is a fully resolved causation web, in that every variable causally links to all other variables. We could think of it as a coherent subset of the overall kelp forest dynamic system. Now we optimize the S-map theta parameter (degree of nonlinearity) for each species individually.
+![A subset of the cross-mapping from Step 4, representing the variables used in the multivariate embedding.](xmap_subset.png)
 
-```{r uniform multivariate embedding}
+This is a fully resolved causation web, in that every variable causally links to all other variables. We could think of it as a coherent subset of the overall kelp forest dynamic system, and we can be confident that these species all interact closely and therefore that a multivariate manifold using these species is warranted. With a physical variable, three species of algae, and three species of invertebrates, it is also a good microcosm of intermediate complexity, representative of the larger kelp forest community.
+
+Now we optimize the S-map theta parameter (degree of nonlinearity) for each species individually. In other words, we use the same attractor (same library) for all species, but allow the weights of library vectors to vary across the manifold and for each species individually.
+
+```{r uniform multivariate embedding,message=F,warning=F}
 # We keep the same embedding for each model fit, but optimize the model (i.e., find best theta and calculate S-maps) for each species individually
-require(quantreg)
 
 species <- c("mac","purp","lam","wavy","pter","red","ymac")
+lib.vars <- c(species,"npgo.mean")
 
-multi.coh.theta <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
+# Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
+multi.theta <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
 
-multi.coh.mods <- list()
+# Lists to hold the model for each species, a "long form" of each model for plotting, and a boxplot of interaction coefficients.
+multi.mods <- list()
 coh.long <- list()
 int.box <- list()
 
-ptm=proc.time()
-
 for (i in 1:7) {
   spp <- species[i]
-  lib.vars <- c(species,"npgo.mean")
+  
+  # Run multivariate S-maps with varying theta
   temp <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
   
-  # Find optimal theta
+  # Find optimal theta based on best predictive skill
   opt.stats <- temp %>% filter(rho==max(rho))
-  multi.coh.theta$theta[i] <- opt.stats$theta
-  multi.coh.theta$rho[i] <- opt.stats$rho
-  multi.coh.theta$mae[i] <- opt.stats$mae
+  multi.theta$theta[i] <- opt.stats$theta
+  multi.theta$rho[i] <- opt.stats$rho
+  multi.theta$mae[i] <- opt.stats$mae
   
-  # Save model coefficients with optimal theta
+  # Save S-map coefficients for the optimal model
   best_model <- block_lnlp(multiblock,lib=as.matrix(segs),pred=as.matrix(segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
   
   # rename s-map coefficients to variable names for later reference
   colnames(best_model[[1]]$smap_coefficients) <- c(lib.vars,"const")
-  multi.coh.mods[[spp]] <- best_model[[1]]
+  multi.mods[[spp]] <- best_model[[1]]
   
   # long form for plotting
-  coh.long[[spp]] <- multi.coh.mods[[spp]]$smap_coefficients %>% 
+  coh.long[[spp]] <- multi.mods[[spp]]$smap_coefficients %>% 
     as.data.frame() %>% 
     gather(key=effect,value=value,na.rm=T) %>%
     left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
     group_by(effect)
   
-  # box plot of interactinos
-  int.box[[spp]] <- ggplot(coh.long[[spp]],aes(x=effect,y=value,fill=effect))+
+  # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  int.box[[spp]] <- ggplot(coh.long[[spp]],aes(x=pred.name,y=value,fill=effect))+
   geom_boxplot() +
   geom_hline(yintercept=0,linetype=2,col="gray40")+
   xlab("Interacting Variable") +
   ylab("Coefficient") +
-  ggtitle(c("Interactive Effects on Dynamics, ",spp))+
+  ggtitle(paste("Interactive Effects on Dynamics of ",sppname))+
   guides(fill="none")
 }
 
-multi.coh.theta
-proc.time()-ptm
+kable(data_frame(Species=c("Macrocystis pyrifera","Strongylocentrotus purpuratus","Laminaria","Megastraea undosa","Pterogophora californica","Strongylocentrotus fransciscanus","Macrocystis pyrifera (j)"),Theta=multi.theta$theta,Skill=multi.theta$rho,MAE=multi.theta$mae),align=c("l","c","c","c"),caption="Multivariate S-maps Model Fitting.",digits=3)
 
+int.box[['mac']]
+int.box[['ymac']]+ylim(-2,2)
+int.box[['wavy']]
+```
+
+```{r, echo=F}
+rm(i,best_model,spp,sppname,temp,opt.stats)
 ```
 
 ```{r quantile plot, echo=F}
@@ -1085,43 +845,64 @@ quant_reg_plot <- function(x,y,lvl=0.95) {
 }
 ```
 
+***
+
+### 6. Tracking Real-time Species Interactions
+
+From the results of the cross-mapping and multivariate modeling exercises, it is clear that the algal and invertebrate species in the San Nicoloas Island kelp forest system interact with one another in nonlinear, complex, but predictable ways. Now that we have a multivariate predictive model for a number of species' dynamics, we can look at these phenomena in more detail, and answer the questions:
+
+  * *Are interactions between species constant over time (in both direction and magnitude)?*
+  * *If not, are there predictable conditions under which we may expect a certain type of interaction (e.g., competition vs. facilitation)?*
+
+Examples of more species-specific questions include:
+
+  * *Can we distinguish between times of top-down vs. bottom-up forcing of Macrocystis dynamics? What are their relative strengths?*
+  * *Are there different dynamics controlling juvenile and adult Macrocystis?*
+  * *What are the conditions under which the invertebrates compete vs. facilitate one another?*
+  
+The exploration of these questions will give us insight into a more mechanistic view of the nonlinear interactions in this dynamic system.
+
+For this exercise, we use S-maps to investigate the interactions strengths between physical variables and species, and species with one another, in real time. S-maps actually calculates sequential "Jacobian" community matrices (the local effect at each point on the attractor of each variable on every other variable). By explicitly recording these coefficients for each predicted vector, we can reveal how species interactions are changing over time. The logic and calculations behind this are described in Sugihara (1994) and Deyle et al. (2016).
+
+***
+
 ### References
 
-*Arkema, K. K., Reed, D. C., & Schroeter, S. C. (2009). Direct and indirect effects of giant kelp determine benthic community structure and dynamics. Ecology, 90(11), 3126–3137.*
+_Arkema, K. K., Reed, D. C., & Schroeter, S. C. (2009). Direct and indirect effects of giant kelp determine benthic community structure and dynamics. Ecology, 90(11), 3126–3137._
 
-*Bell, T. W., Cavanaugh, K. C., Reed, D. C., & Siegel, D. A. (2015). Geographical variability in the controls of giant kelp biomass dynamics. Journal of Biogeography, 42(10), 2010–2021. http://doi.org/10.1111/jbi.12550*
+_Bell, T. W., Cavanaugh, K. C., Reed, D. C., & Siegel, D. A. (2015). Geographical variability in the controls of giant kelp biomass dynamics. Journal of Biogeography, 42(10), 2010–2021_
 
-*Cavanaugh, K. C., Siegel, D. A., Reed, D. C., & Dennison, P. E. (2011). Environmental controls of giant-kelp biomass in the Santa Barbara Channel, California. Marine Ecology Progress Series, 429, 1–17. http://doi.org/10.3354/meps09141*
+_Cavanaugh, K. C., Siegel, D. A., Reed, D. C., & Dennison, P. E. (2011). Environmental controls of giant-kelp biomass in the Santa Barbara Channel, California. Marine Ecology Progress Series, 429, 1–17_
 
-*Clark, A. T., Ye, H., Isbell, F., Deyle, E. R., Cowles, J., Tilman, D., & Sugihara, G. (2015). Spatial convergent cross mapping to detect causal relationships from short time series. Ecology, 96(5), 1174–1181.*
+_Clark, A. T., Ye, H., Isbell, F., Deyle, E. R., Cowles, J., Tilman, D., & Sugihara, G. (2015). Spatial convergent cross mapping to detect causal relationships from short time series. Ecology, 96(5), 1174–1181_
 
-*Deyle, E. R., & Sugihara, G. (2011). Generalized theorems for nonlinear state space reconstruction. PLoS ONE, 6(3). http://doi.org/10.1371/journal.pone.0018295*
+_Deyle, E. R., & Sugihara, G. (2011). Generalized theorems for nonlinear state space reconstruction. PLoS ONE, 6(3)_
 
-*Deyle, E. R., May, R. M., Munch, S. B., & Sugihara, G. (2016). Tracking and forecasting ecosystem interactions in real time. Proceedings of the Royal Society B: Biological Sciences, 283(1822), 20152258. http://doi.org/10.1098/rspb.2015.2258*
+_Deyle, E. R., May, R. M., Munch, S. B., & Sugihara, G. (2016). Tracking and forecasting ecosystem interactions in real time. Proceedings of the Royal Society B: Biological Sciences, 283(1822), 20152258_
 
-*Foster, M., & Schiel, D. (1985). Ecology of giant kelp forests in California: a community profile. United States Fish and Wildlife Service Biological Report, 85, 1–152. http://doi.org/10.1002/hyp.5819*
+_Foster, M., & Schiel, D. (1985). Ecology of giant kelp forests in California: a community profile. United States Fish and Wildlife Service Biological Report, 85, 1–152_
 
-*Harrold, C., & Reed, D. C. (1985). Food Availability , Sea Urchin Grazing , and Kelp Forest Community Structure. Ecology, 66(4), 1160–1169.*
+_Harrold, C., & Reed, D. C. (1985). Food Availability , Sea Urchin Grazing , and Kelp Forest Community Structure. Ecology, 66(4), 1160–1169._
 
-*Hsieh, C., Anderson, C., & Sugihara, G. (2008). Extending nonlinear analysis to short ecological time series. The American Naturalist, 171(1), 71–80. http://doi.org/10.1086/524202*
+_Hsieh, C., Anderson, C., & Sugihara, G. (2008). Extending nonlinear analysis to short ecological time series. The American Naturalist, 171(1), 71–80_
 
-*Kenner, Michael C., James A. Estes, M. Tim Tinker, James L. Bodkin, Robert K. Cowen, Christopher Harrold, Brian B. Hatfield, Mark Novak, Andrew Rassweiler, and Daniel C. Reed (2013). "A multi‐decade time series of kelp forest community structure at San Nicolas Island, California (USA)." Ecology 94, no. 11 : 2654-2654.*
+_Kenner, Michael C., James A. Estes, M. Tim Tinker, James L. Bodkin, Robert K. Cowen, Christopher Harrold, Brian B. Hatfield, Mark Novak, Andrew Rassweiler, and Daniel C. Reed (2013). "A multi‐decade time series of kelp forest community structure at San Nicolas Island, California (USA)." Ecology 94, no. 11 : 2654-2654._
 
-*Paine, R. T. (1980). Food webs: linkage, interaction strength and community infrastructure. Journal of Animal Ecology, 49(3), 666–685.*
+_Paine, R. T. (1980). Food webs: linkage, interaction strength and community infrastructure. Journal of Animal Ecology, 49(3), 666–685._
 
-*Reed, D. C., Rassweiler, A., Carr, M. H., Cavanaugh, K. C., Malone, D. P., & Siegel, D. A. (2011). Wave disturbance overwhelms top-down and bottom-up control of primary production in California kelp forests. Ecology, 92(11), 2108–2116. http://doi.org/10.1890/11-0377.1*
+_Reed, D. C., Rassweiler, A., Carr, M. H., Cavanaugh, K. C., Malone, D. P., & Siegel, D. A. (2011). Wave disturbance overwhelms top-down and bottom-up control of primary production in California kelp forests. Ecology, 92(11), 2108–2116_
 
-*Sala, E., & Graham, M. H. (2002). Community-wide distribution of predator-prey interaction strength in kelp forests. Proceedings of the National Academy of Sciences of the United States of America, 99(6), 3678–3683. http://doi.org/10.1073/pnas.052028499*
+_Sala, E., & Graham, M. H. (2002). Community-wide distribution of predator-prey interaction strength in kelp forests. Proceedings of the National Academy of Sciences of the United States of America, 99(6), 3678–3683_
 
-*Sugihara, G. (1994). Nonlinear forecasting for the classification of natural time series. Philosophical Transcations of the Royal Society of London Series A-Mathematical Physical and Engineering Sciences, 348, 477–495.*
+_Sugihara, G. (1994). Nonlinear forecasting for the classification of natural time series. Philosophical Transcations of the Royal Society of London Series A-Mathematical Physical and Engineering Sciences, 348, 477–495._
 
-*Sugihara, G., & May, R. M. (1990). Nonlinear forecasting as a way of distinguishing chaos from measurement error in time series. Nature, 344(6268), 734–741. http://doi.org/10.1038/344734a0*
+_Sugihara, G., & May, R. M. (1990). Nonlinear forecasting as a way of distinguishing chaos from measurement error in time series. Nature, 344(6268), 734–741_
 
-*Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M., & Munch, S. (2012). Detecting causality in complex ecosystems. Science, 338(6106), 496–500. http://doi.org/10.1126/science.1227079*
+_Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M., & Munch, S. (2012). Detecting causality in complex ecosystems. Science, 338(6106), 496–500_
 
-*Takens, F. (1981). Detecting strange attractors in turbulence. In D. A. Rand & L. S. Young (Eds.), Symposium on Dynamical Systems and Turbulence (Vol. 898, pp. 366–381). Berlin: Springer-Verlag. http://doi.org/10.1017/CBO9781107415324.004*
+_Takens, F. (1981). Detecting strange attractors in turbulence. In D. A. Rand & L. S. Young (Eds.), Symposium on Dynamical Systems and Turbulence (Vol. 898, pp. 366–381). Berlin: Springer-Verlag_
 
-*Ye, H., Deyle, E. R., Gilarranz, L. J., & Sugihara, G. (2015). Distinguishing time-delayed causal interactions using convergent cross mapping. Scientific Reports, 5, 14750. http://doi.org/10.1038/srep14750*
+_Ye, H., Deyle, E. R., Gilarranz, L. J., & Sugihara, G. (2015). Distinguishing time-delayed causal interactions using convergent cross mapping. Scientific Reports, 5, 14750_
 
-*Young, M. A., Cavanaugh, K. C., Bell, T. W., Raimondi, P. T., Edwards, C. A., Drake, P. T., … Storlazzi, C. (2015). Environmental controls on spatial patterns in the long-term persistence of giant kelp in central California. Ecology, 86(1), 45–60. http://doi.org/10.1890/15-0267.1*
+_Young, M. A., Cavanaugh, K. C., Bell, T. W., Raimondi, P. T., Edwards, C. A., Drake, P. T., … Storlazzi, C. (2015). Environmental controls on spatial patterns in the long-term persistence of giant kelp in central California. Ecology, 86(1), 45–60._
 
