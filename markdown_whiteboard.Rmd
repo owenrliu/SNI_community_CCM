@@ -86,7 +86,7 @@ Usual best practice for EDM is to create normalized time series, so that state-s
 
 ***
 
-### 2. Adding Physical Variables
+### 2. $\sc{Adding Physical Variables}$
 
 Along with investigating dynamic species interactions, we also want to explore where physical forcing fits into our dynamic story. A body of other research has established that a combination of physical forcing (waves, storms), temperature, and lower frequency climate modes (e.g., El Ninos) have an important influence on the dynamics of kelp forests (Reed et al., 2011; Cavanaugh et al., 2011; Bell et al., 2015; Young et al., 2015). With these data, we can draw connections between the physical variables and not just *Macrocystis pyrifera* dynamics, but all of the species in our constrained trophic web.
 
