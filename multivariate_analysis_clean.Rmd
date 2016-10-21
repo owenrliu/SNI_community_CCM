@@ -64,6 +64,10 @@ Data is collected at each station during each monitoring period on the density a
 
 For full description of the monitoring methods, see the metadata from Kenner et al. (2013) at the DOI above. For our analyses, we use a subset of data, compiled from the benthic density raw data. Data for the 12 species of interest (above) were compiled, and to maximize the potential amount of dynamic information, the data from each swath at each station was treated as a separate time series, leaving us with 37 time series for each of the 12 species. Each time series contains 63 data points, corresponding to the 63 monitoring periods, one approximately every six months from Fall, 1980 to Fall, 2011. Individual time series of species density were normalized to have a mean of zero and a standard deviation of 1.
 
+```{r periods}
+period.key <- data_frame(year=rep(1980:2011,each=12),month=rep(1:12,32),period=c(rep(NA,5),rep(1,5),rep(2:63,each=6),rep(64,2)))
+```
+
 These first lines of code import the benthic data we need.
   
 ```{r setup, message=F}
@@ -866,8 +870,10 @@ quant_reg_plot <- function(x,y,lvl=0.95,...) {
   qL <- rq(y ~ x,(1-lvl)) 
   qU <- rq(y ~ x,lvl)
   plot(x,y,pch=8,cex=0.5,...)
+  abline(lm(y~x),col="blue",lty=2)
   abline(a=qL$coefficients[1],b=qL$coefficients[2],lty=2,col="red",lwd=2)
   abline(a=qU$coefficients[1],b=qU$coefficients[2],lty=2,col="red",lwd=2)
+  abline(h=0,lty=3)
 }
 
 ### Macrocystis multivariate model, for nonlinear reference
@@ -922,11 +928,14 @@ For this exercise, we use S-maps to investigate the interactions strengths betwe
 
 ***
 
-#### Maximal Difference, West End sites
+#### Split Models by Island Area
 
-```{r west end test}
+SNI has 4 major groupings of sites: The West End (sites 2 and 3), Dutch Harbor along the southern coast (site 4 and 5), Daytona along the southeast (Site 6), and Nav Fac on the north side (site 1). In this step, we fit the same models as above and look for differences between sites.
+
+```{r west end site}
 westend.sites <- c("2_10L", '2_22L', "2_32R", "2_39L", "2_45L", "3_10R" ,"3_22R", "3_32L", "3_39R", "3_45L")
-westend <- multiblock %>% filter(site %in% westend.sites) %>% select(period,site,one_of(lib.vars))
+westend.lib.vars <- lib.vars
+westend <- multiblock %>% filter(site %in% westend.sites) %>% select(period,site,one_of(westend.lib.vars))
 
 # segments
 westend_segs_sites <- westend %>%  
@@ -937,16 +946,552 @@ westend_segs_sites <- westend %>%
 # Time series segments without site identifier. We'll need this later
 westend.segs <- select(westend_segs_sites,-site)
 
-# Find best West End theta
-test <- block_lnlp(westend,lib=as.matrix(westend.segs),pred=as.matrix(westend.segs),columns=lib.vars,target_column="mac",num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+### Differences between barren and forest dynamics
+plot(westend$red,westend$mac,pch=19)
+abline(v=-0.5,lty=2)
 
-# Run best S-map and save coeffs and model output
-test2 <- block_lnlp(westend,lib=as.matrix(westend.segs),pred=as.matrix(westend.segs),columns=lib.vars,target_column="mac",num_neighbors=0,method="s-map",theta = 4,save_smap_coefficients = T, silent=T)[[1]]
+westend <- westend %>% 
+  mutate(state=ifelse((red>-0.5 | mac< -0.5),"barren","forest"))
 
-# find error over time
-test3 <- test2$model_output %>% mutate(abs=abs(pred-obs)) %>% bind_cols(westend)
-test4 <- test3 %>% group_by(period) %>% summarise(mae=mean(abs,na.rm=T))
+# Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
+westend.thetas <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
 
+## Westend multivariate models
+westend.mods <- list()
+westend.coeffs <- list()
+westend.coeffs.long <- list()
+westend.box <- list()
+
+for (i in 1:7) {
+  spp <- species[i]
+  
+  # Run multivariate S-maps with varying theta
+  temp<-block_lnlp(westend,lib=as.matrix(westend.segs),pred=as.matrix(westend.segs),columns=westend.lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+  
+  # Find optimal theta based on best predictive skill
+  opt.stats <- temp %>% filter(rho==max(rho))
+  westend.thetas$theta[i] <- opt.stats$theta
+  westend.thetas$rho[i] <- opt.stats$rho
+  westend.thetas$mae[i] <- opt.stats$mae
+  
+  # Save S-map coefficients for the optimal model
+  best_model <- block_lnlp(westend,lib=as.matrix(westend.segs),pred=as.matrix(westend.segs),columns=westend.lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  westend.coeffs[[spp]] <- best_model[[1]]$smap_coefficients %>% as.data.frame()
+  names(westend.coeffs[[spp]]) <- c(westend.lib.vars,"const")
+  westend.coeffs[[spp]]$state <- westend$state
+  westend.coeffs[[spp]]$period <- westend$period
+  westend.mods[[spp]] <- best_model[[1]]
+  
+  # long form for plotting
+  westend.coeffs.long[[spp]] <- westend.coeffs[[spp]] %>%
+    gather(key=effect,value=value,-state,-period,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+  # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  westend.box[[spp]]<- ggplot(westend.coeffs.long[[spp]],aes(x=pred.name,y=value,fill=state))+
+  geom_boxplot() +
+  geom_hline(yintercept=0,linetype=2,col="gray40")+
+  xlab("Interacting Variable") +
+  ylab("Coefficient") +
+  ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", West End"))
+}
+
+# Mean interactions over time (across spatial replicates)
+westend_mean_ints <- list()
+westend_mean_ints_plot <- list()
+for(i in 1:length(species)) {
+  spp <- species[i]
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  westend_mean_ints[[spp]] <- westend.coeffs.long[[spp]] %>% 
+    group_by(period,effect) %>% 
+    summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+    mutate(lower=meanint-sdint,upper=meanint+sdint)
+  westend_mean_ints_plot[[spp]] <- ggplot(westend_mean_ints[[spp]],aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    facet_wrap(~effect)+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname, ", West End"))
+}
+
+## How do species interaction strengths change under changing environmental conditions?
+## Does this relationship change depending on ecosystem state (forests vs. barrens)
+
+westend.barrens <- filter(westend,state=="barren")
+westend.forests <- filter(westend,state=="forest")
+westend.coeffs.barrens <- lapply(westend.coeffs,function(x) filter(x,state=="barren"))
+westend.coeffs.forests <- lapply(westend.coeffs,function(x) filter(x,state=="forest"))
+
+sppnames <- fullkey$plotting[match(species,fullkey$short)]
+par(mfrow=c(2,2),oma=c(0,0,2,0))
+barrens.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+for(i in 1:length(species)) {
+  plot(westend.barrens$npgo.mean,westend.coeffs.barrens$mac[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
+  abline(h=0,lty=3)
+  abline(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean),col="blue",lty=2)
+  barrens.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean))$coefficients[,1][2]
+  barrens.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean))$coefficients[,4][2]
+  title("Interactions with Macrocystis (>1m) in Barrens State", outer=T)
+}
+barrens.ints.coef.pvals
+
+par(mfrow=c(2,2),oma=c(0,0,2,0))
+forests.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+for(i in 1:length(species)) {
+  plot(westend.forests$npgo.mean,westend.coeffs.forests$mac[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
+  abline(h=0,lty=3)
+  abline(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean),col="blue",lty=2)
+  forests.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean))$coefficients[,1][2]
+  forests.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean))$coefficients[,4][2]
+  title("Interactions with Macrocystis (>1m) in Forested State", outer=T)
+}
+forests.ints.coef.pvals
+
+par(mfrow=c(1,1))
+# Does model error go up with NPGO? Nope
+plot(westend$npgo.mean,abs(westend.mods$mac$model_output$obs-westend.mods$mac$model_output$pred),
+     xlab="NPGO",ylab="Absolute error")
+
+# Does actual variance in density go up with NPGO? Maybe
+westend.npgo.var <- westend.mods$mac$model_output %>% 
+  bind_cols(data_frame(period=lead(westend$period,1))) %>% 
+  bind_cols(data_frame(npgo.mean=lead(westend$npgo.mean,1))) %>%
+  group_by(npgo.mean) %>%
+  summarise(obs.var = sd(obs,na.rm=T),pred.var = sd(pred,na.rm=T))
+plot(westend.npgo.var$npgo.mean,westend.npgo.var$obs.var,xlab="NPGO",ylab="SD of Macrocystis Density")
+abline(lm(westend.npgo.var$obs.var~westend.npgo.var$npgo.mean),lty=2)
+
+## t-test differences between barrens and forests
+ttest_ints <- function(spp) {
+  out <- data_frame(spp=rep(spp,length(lib.vars)),
+                    effect=character(length(lib.vars)),
+                    barrens_sig=character(length(lib.vars)),
+                    forests_sig=character(length(lib.vars)),
+                    barrens_int=numeric(length(lib.vars)),
+                    forest_int=numeric(length(lib.vars)),
+                    p=numeric(length(lib.vars)))
+  for(i in 1:length(lib.vars)) {
+    eff <- lib.vars[i]
+    temp <- t.test(westend.coeffs.barrens[[spp]][,eff],westend.coeffs.forests[[spp]][,eff])
+    barrens.sig <- ifelse(t.test(westend.coeffs.barrens[[spp]][,eff])$p.value<0.05,"Yes","No")
+    forest.sig <- ifelse(t.test(westend.coeffs.forests[[spp]][,eff])$p.value<0.05,"Yes","No")
+    stats <- round(c(temp$estimate[1],temp$estimate[2],temp$p.value),4)
+    out[i,] <- c(spp,eff,barrens.sig,forest.sig,stats)
+  }
+  return(out)
+}
+diff.tests <- lapply(species,ttest_ints)
+names(diff.tests) <- species
+
+```
+
+Daytona Beach
+
+```{r daytona}
+daytona.sites <- c("6_10R", "6_22L", "6_22R", "6_32L", "6_39L", "6_39R", "6_45R")
+daytona <- multiblock %>% filter(site %in% daytona.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+daytona_segs_sites <- daytona %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+daytona.segs <- select(daytona_segs_sites,-site)
+
+# Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
+daytona.thetas <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
+
+## daytona multivariate models
+daytona.mods <- list()
+daytona.coeffs <- list()
+daytona.coeffs.long <- list()
+daytona.box <- list()
+
+for (i in 1:7) {
+  spp <- species[i]
+  
+  # Run multivariate S-maps with varying theta
+  temp<-block_lnlp(daytona,lib=as.matrix(daytona.segs),pred=as.matrix(daytona.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+  
+  # Find optimal theta based on best predictive skill
+  opt.stats <- temp %>% filter(rho==max(rho))
+  daytona.thetas$theta[i] <- opt.stats$theta
+  daytona.thetas$rho[i] <- opt.stats$rho
+  daytona.thetas$mae[i] <- opt.stats$mae
+  
+  # Save S-map coefficients for the optimal model
+  best_model <- block_lnlp(daytona,lib=as.matrix(daytona.segs),pred=as.matrix(daytona.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  daytona.coeffs[[spp]] <- best_model[[1]]$smap_coefficients %>% as.data.frame()
+  names(daytona.coeffs[[spp]]) <- c(lib.vars,"const")
+  daytona.coeffs[[spp]]$period <- daytona$period
+  daytona.mods[[spp]] <- best_model[[1]]
+  
+  # long form for plotting
+  daytona.coeffs.long[[spp]] <- daytona.coeffs[[spp]] %>%
+    gather(key=effect,value=value,-period,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+  # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  daytona.box[[spp]]<- ggplot(daytona.coeffs.long[[spp]],aes(x=pred.name,y=value,fill=effect))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
+    xlab("Interacting Variable") +
+    ylab("Coefficient") +
+    guides(fill="none")+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Daytona"))
+}
+
+# Mean interactions over time (across spatial replicates)
+daytona_mean_ints <- list()
+daytona_mean_ints_plot <- list()
+for(i in 1:length(species)) {
+  spp <- species[i]
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  daytona_mean_ints[[spp]] <- daytona.coeffs.long[[spp]] %>% 
+    group_by(period,effect) %>% 
+    summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+    mutate(lower=meanint-sdint,upper=meanint+sdint)
+  daytona_mean_ints_plot[[spp]] <- ggplot(daytona_mean_ints[[spp]],aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    facet_wrap(~effect)+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Daytona"))
+}
+```
+
+Dutch Harbor
+
+```{r dutch}
+dutch.sites <- c("4_10R", "4_22L", "4_32L", "4_39L", "4_45L", "5_10R", "5_22R", "5_32L", "5_39R", "5_45R")
+dutch <- multiblock %>% filter(site %in% dutch.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+dutch_segs_sites <- dutch %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+dutch.segs <- select(dutch_segs_sites,-site)
+
+# Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
+dutch.thetas <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
+
+## dutch multivariate models
+dutch.mods <- list()
+dutch.coeffs <- list()
+dutch.coeffs.long <- list()
+dutch.box <- list()
+
+for (i in 1:7) {
+  spp <- species[i]
+  
+  # Run multivariate S-maps with varying theta
+  temp<-block_lnlp(dutch,lib=as.matrix(dutch.segs),pred=as.matrix(dutch.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+  
+  # Find optimal theta based on best predictive skill
+  opt.stats <- temp %>% filter(rho==max(rho))
+  dutch.thetas$theta[i] <- opt.stats$theta
+  dutch.thetas$rho[i] <- opt.stats$rho
+  dutch.thetas$mae[i] <- opt.stats$mae
+  
+  # Save S-map coefficients for the optimal model
+  best_model <- block_lnlp(dutch,lib=as.matrix(dutch.segs),pred=as.matrix(dutch.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  dutch.coeffs[[spp]] <- best_model[[1]]$smap_coefficients %>% as.data.frame()
+  names(dutch.coeffs[[spp]]) <- c(lib.vars,"const")
+  dutch.coeffs[[spp]]$period <- dutch$period
+  dutch.mods[[spp]] <- best_model[[1]]
+  
+  # long form for plotting
+  dutch.coeffs.long[[spp]] <- dutch.coeffs[[spp]] %>%
+    gather(key=effect,value=value,-period,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+  # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  dutch.box[[spp]]<- ggplot(dutch.coeffs.long[[spp]],aes(x=pred.name,y=value,fill=effect))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
+    xlab("Interacting Variable") +
+    ylab("Coefficient") +
+    guides(fill="none")+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Dutch Harbor"))
+}
+
+# Mean interactions over time (across spatial replicates)
+dutch_mean_ints <- list()
+dutch_mean_ints_plot <- list()
+for(i in 1:length(species)) {
+  spp <- species[i]
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  dutch_mean_ints[[spp]] <- dutch.coeffs.long[[spp]] %>% 
+    group_by(period,effect) %>% 
+    summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+    mutate(lower=meanint-sdint,upper=meanint+sdint)
+  dutch_mean_ints_plot[[spp]] <- ggplot(dutch_mean_ints[[spp]],aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    facet_wrap(~effect)+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Dutch Harbor"))
+}
+```
+
+Nav Fac
+
+```{r navfac}
+navfac.sites <- c("1_10R", "1_22R", "1_32L", "1_39R", "1_45R")
+navfac <- multiblock %>% filter(site %in% navfac.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+navfac_segs_sites <- navfac %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+navfac.segs <- select(navfac_segs_sites,-site)
+
+# Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
+navfac.thetas <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
+
+## navfac multivariate models
+navfac.mods <- list()
+navfac.coeffs <- list()
+navfac.coeffs.long <- list()
+navfac.box <- list()
+
+for (i in 1:7) {
+  spp <- species[i]
+  
+  # Run multivariate S-maps with varying theta
+  temp<-block_lnlp(navfac,lib=as.matrix(navfac.segs),pred=as.matrix(navfac.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8),save_smap_coefficients = F, silent=T)
+  
+  # Find optimal theta based on best predictive skill
+  opt.stats <- temp %>% filter(rho==max(rho))
+  navfac.thetas$theta[i] <- opt.stats$theta
+  navfac.thetas$rho[i] <- opt.stats$rho
+  navfac.thetas$mae[i] <- opt.stats$mae
+  
+  # Save S-map coefficients for the optimal model
+  best_model <- block_lnlp(navfac,lib=as.matrix(navfac.segs),pred=as.matrix(navfac.segs),columns=lib.vars,target_column=spp,num_neighbors=0,method="s-map",theta = opt.stats$theta,save_smap_coefficients = T, silent=T)
+  
+  # rename s-map coefficients to variable names for later reference
+  navfac.coeffs[[spp]] <- best_model[[1]]$smap_coefficients %>% as.data.frame()
+  names(navfac.coeffs[[spp]]) <- c(lib.vars,"const")
+  navfac.coeffs[[spp]]$period <- navfac$period
+  navfac.mods[[spp]] <- best_model[[1]]
+  
+  # long form for plotting
+  navfac.coeffs.long[[spp]] <- navfac.coeffs[[spp]] %>%
+    gather(key=effect,value=value,-period,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+  # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  navfac.box[[spp]]<- ggplot(navfac.coeffs.long[[spp]],aes(x=pred.name,y=value,fill=effect))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
+    xlab("Interacting Variable") +
+    ylab("Coefficient") +
+    guides(fill="none")+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Nav Fac"))
+}
+
+# Mean interactions over time (across spatial replicates)
+navfac_mean_ints <- list()
+navfac_mean_ints_plot <- list()
+for(i in 1:length(species)) {
+  spp <- species[i]
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  navfac_mean_ints[[spp]] <- navfac.coeffs.long[[spp]] %>% 
+    group_by(period,effect) %>% 
+    summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+    mutate(lower=meanint-sdint,upper=meanint+sdint)
+  navfac_mean_ints_plot[[spp]] <- ggplot(navfac_mean_ints[[spp]],aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    facet_wrap(~effect)+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Nav Fac"))
+}
+```
+
+Dutch Harbor looks super different than other sites (much lower predictability). Let's investigate.
+
+```{r dutch data explo}
+
+dutch.simp.list <- list()
+# we go back to our original study spp
+dutch_spp <- c("pat","red","purp","wavy","paras","cys","lam","eis","pter","mac","ymac")
+dutch <- benthdat.block %>% left_join(phys.dat.norm,by="period") %>% filter(site %in% dutch.sites)
+
+# Run simplex projection for each species, and plot output
+par(mfrow=c(3,2))
+for(i in 1:length(dutch_spp)) {
+  spp <- dutch_spp[i]
+  dat <- dutch %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),E=2:15,silent=T)
+  dutch.simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+# Run simplex for each physical variable
+par(mfrow=c(3,2))
+for(i in 1:length(phys.vars)) {
+  ind <- phys.vars[i]
+  dat <- dutch %>% select(matches(ind))
+  out <- simplex(as.numeric(dat[,1]),lib=c(1,63),E=2:10,silent=T)
+  dutch.simp.list[[ind]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(ind,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+dutch.bestE <- sapply(dutch.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+dutch.bestE["paras"] <- 4
+dutch.bestE["pter"] <- 7
+dutch.bestE["mac"] <- 8
+
+# prediction decay
+dutch.tp.list <- list()
+
+par(mfrow=c(2,2))
+for(i in 1:length(dutch_spp)) {
+  spp <- dutch_spp[i]
+  dat <- dutch %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),silent=T,E=dutch.bestE[spp],tp=1:10)
+  dutch.tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
+}
+
+dutch.smap.list <- list() # list to store output
+
+par(mfrow=c(3,2))
+for(i in 1:length(dutch_spp)) {
+  spp <- dutch_spp[i]
+  dat <- dutch %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),E=dutch.bestE[spp],silent=T)
+  dutch.smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
+}
+# Not promising diagnostics... can CCM give us a clue?
+
+# CCM ############
+
+# Rows hold predicted variables, columns hold forcing variables. There are more columns than rows since the physical variables are included as potential forcing factors.
+dutch <- dutch %>% select(-pis)
+n_col <- dim(dutch)[2]-2
+n_row <- dim(dutch)[2]-7
+col_names <- colnames(dutch)[3:(n_col+2)]
+row_names <- colnames(dutch)[3:(n_row+2)]
+dutch_xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+dutch.p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).
+dutch.p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+dutch.ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=dutch.bestE[col_names[j]]
+      temp <- ccm(dutch,lib=as.matrix(dutch.segs),pred=as.matrix(dutch.segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,500),num_samples=100,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==500) %>% ccm_means()
+      dutch_xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at largest library size)
+      p1 <- temp %>% filter(lib_size==500) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      dutch.p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==500])$p.value
+      dutch.p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      dutch.ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+
+rm(p1,p2,tempE,temp,rhomean)
+
+# keep only signficant cross-mappings
+dutch_xmap_mat <-dutch_xmap_mat*dutch.ptot.mat %>% as.data.frame()
+dutch_xmap_rast <- dutch_xmap_mat %>% 
+  mutate(predictee=row.names(dutch_xmap_mat)) %>% 
+  gather(key=predictor,value=rho,cys:sst.mean)
+
+# If rho is zero, replace with NA (no significant causal signal)
+dutch_xmap_rast$rho[dutch_xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+dutch_xmap_rast <- dutch_xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+dutch_xmap_all_plot <- ggplot(dutch_xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+dutch_xmap_all_plot
+
+#HMMM crappy results
+```
+
+
+```{r sample plots}
 ### Pretty dynamic interaction plot
 test5 <- multi.mods$pter$smap_coefficients %>% as.data.frame() %>% filter(!is.na(mac)) %>% mutate(time=row_number())
 dyn.pter.plot <- ggplot(test5,aes(x=time))+
