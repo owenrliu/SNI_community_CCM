@@ -1083,8 +1083,9 @@ ttest_ints <- function(spp) {
     temp <- t.test(westend.coeffs.barrens[[spp]][,eff],westend.coeffs.forests[[spp]][,eff])
     barrens.sig <- ifelse(t.test(westend.coeffs.barrens[[spp]][,eff])$p.value<0.05,"Yes","No")
     forest.sig <- ifelse(t.test(westend.coeffs.forests[[spp]][,eff])$p.value<0.05,"Yes","No")
-    stats <- round(c(temp$estimate[1],temp$estimate[2],temp$p.value),4)
-    out[i,] <- c(spp,eff,barrens.sig,forest.sig,stats)
+    stats <- as.numeric(round(c(temp$estimate[1],temp$estimate[2],temp$p.value),4))
+    out[i,1:4] <- c(spp,eff,barrens.sig,forest.sig)
+    out[i,5:7] <-stats
   }
   return(out)
 }
