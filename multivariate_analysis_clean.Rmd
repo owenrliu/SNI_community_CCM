@@ -1032,26 +1032,26 @@ sppnames <- fullkey$plotting[match(species,fullkey$short)]
 par(mfrow=c(2,2),oma=c(0,0,2,0))
 barrens.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
 for(i in 1:length(species)) {
-  plot(westend.barrens$npgo.mean,westend.coeffs.barrens$mac[,species[i]],
+  plot(westend.barrens$npgo.mean,westend.coeffs.barrens$lam[,species[i]],
        xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
   abline(h=0,lty=3)
-  abline(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean),col="blue",lty=2)
-  barrens.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean))$coefficients[,1][2]
-  barrens.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.barrens$mac[,species[i]]~westend.barrens$npgo.mean))$coefficients[,4][2]
-  title("Interactions with Macrocystis (>1m) in Barrens State", outer=T)
+  abline(lm(westend.coeffs.barrens$lam[,species[i]]~westend.barrens$npgo.mean),col="blue",lty=2)
+  barrens.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.barrens$lam[,species[i]]~westend.barrens$npgo.mean))$coefficients[,1][2]
+  barrens.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.barrens$lam[,species[i]]~westend.barrens$npgo.mean))$coefficients[,4][2]
+  title("Interactions with lamrocystis (>1m) in Barrens State", outer=T)
 }
 barrens.ints.coef.pvals
 
 par(mfrow=c(2,2),oma=c(0,0,2,0))
 forests.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
 for(i in 1:length(species)) {
-  plot(westend.forests$npgo.mean,westend.coeffs.forests$mac[,species[i]],
+  plot(westend.forests$npgo.mean,westend.coeffs.forests$lam[,species[i]],
        xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
   abline(h=0,lty=3)
-  abline(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean),col="blue",lty=2)
-  forests.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean))$coefficients[,1][2]
-  forests.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.forests$mac[,species[i]]~westend.forests$npgo.mean))$coefficients[,4][2]
-  title("Interactions with Macrocystis (>1m) in Forested State", outer=T)
+  abline(lm(westend.coeffs.forests$lam[,species[i]]~westend.forests$npgo.mean),col="blue",lty=2)
+  forests.ints.coef.pvals[i,"coef"] <- summary(lm(westend.coeffs.forests$lam[,species[i]]~westend.forests$npgo.mean))$coefficients[,1][2]
+  forests.ints.coef.pvals[i,"p"] <- summary(lm(westend.coeffs.forests$lam[,species[i]]~westend.forests$npgo.mean))$coefficients[,4][2]
+  title("Interactions with lamrocystis (>1m) in Forested State", outer=T)
 }
 forests.ints.coef.pvals
 
@@ -1155,6 +1155,18 @@ for (i in 1:7) {
     ylab("Coefficient") +
     guides(fill="none")+
     ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Daytona"))
+}
+
+daytona.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+par(mfrow=c(2,2),oma=c(0,0,2,0))
+for(i in 1:length(species)) {
+  plot(daytona$npgo.mean,daytona.coeffs$mac[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-1,1))
+  abline(h=0,lty=3)
+  abline(lm(daytona.coeffs$mac[,species[i]]~daytona$npgo.mean),col="blue",lty=2)
+  daytona.ints.coef.pvals[i,"coef"] <- summary(lm(daytona.coeffs$mac[,species[i]]~daytona$npgo.mean))$coefficients[,1][2]
+  daytona.ints.coef.pvals[i,"p"] <- summary(lm(daytona.coeffs$mac[,species[i]]~daytona$npgo.mean))$coefficients[,4][2]
+  title("Interactions with Macrocystis (>1m) across NPGO", outer=T)
 }
 
 # Mean interactions over time (across spatial replicates)
@@ -1321,6 +1333,18 @@ for (i in 1:7) {
     ylab("Coefficient") +
     guides(fill="none")+
     ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", Nav Fac"))
+}
+
+navfac.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+par(mfrow=c(2,2),oma=c(0,0,2,0))
+for(i in 1:length(species)) {
+  plot(navfac$npgo.mean,navfac.coeffs$mac[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-1,1))
+  abline(h=0,lty=3)
+  abline(lm(navfac.coeffs$mac[,species[i]]~navfac$npgo.mean),col="blue",lty=2)
+  navfac.ints.coef.pvals[i,"coef"] <- summary(lm(navfac.coeffs$mac[,species[i]]~navfac$npgo.mean))$coefficients[,1][2]
+  navfac.ints.coef.pvals[i,"p"] <- summary(lm(navfac.coeffs$mac[,species[i]]~navfac$npgo.mean))$coefficients[,4][2]
+  title("Interactions with macrocystis (>1m) across NPGO", outer=T)
 }
 
 # Mean interactions over time (across spatial replicates)

@@ -294,7 +294,6 @@ bestE <- sapply(simp.list,function(x) {
   temp <- x %>% filter(!is.na(rho))
   temp$E[temp$rho==max(temp$rho)]
 })
-bestE['ymac'] <- 8
 ```
 
 
@@ -324,7 +323,12 @@ for(i in 1:length(study_spp)) {
 rm(spp,dat,out)
 ```
 
-The prediction horizon effect check is promising overall, as most variables decline in predictive ability with increasing time horizon. For *Cystoseira osmundacea*, there is some evidence of cyclic behavior, in that dynamics are more predictable 10 periods in the future than 3 or 4 periods. This is something to be mindful of, but we leave *Cystoseira* in our analysis for now.
+The prediction horizon effect check is promising overall, as most variables decline in predictive ability with increasing time horizon. For *Cystoseira osmundacea*, there is some evidence of cyclic behavior, in that dynamics are more predictable 10 periods in the future than 3 or 4 periods. We remove *Cystoseira* from further analysis
+
+```{r remove p giganteus}
+multiblock <- multiblock %>% select(-cys)
+study_spp <- setdiff(study_spp,"cys")
+```
 
 ***
 
@@ -382,7 +386,7 @@ Let us start simple, and see if the two urchin species, red urchin *Strongylocen
 To be even more conservative in this step, we use only a random half of each time series for both library and prediction sets:
 
 ```{r random time series segments}
-set.seed(413)
+set.seed(42)
 # Sample one half of time series segments, without replacement
 rnd_lib_segs <- sample_frac(segs,0.5,replace=F) %>% arrange(first)
 # Use other half for prediction
@@ -544,7 +548,7 @@ We can make a raster plot of the output (Figure 5).
 xmap_mat <- xmap_mat*ptot.mat %>% as.data.frame()
 xmap_rast <- xmap_mat %>% 
   mutate(predictee=row.names(xmap_mat)) %>% 
-  gather(key=predictor,value=rho,cys:sst.mean)
+  gather(key=predictor,value=rho,eis:sst.mean)
 
 # If rho is zero, replace with NA (no significant causal signal)
 xmap_rast$rho[xmap_rast$rho==0] <- NA
@@ -580,7 +584,7 @@ rm(spp,vars)
 
 ![Kelp Forest Convergent Cross Mapping. Columns are forcing variables, rows are predicted variables. Gray indicates a lack of significant causual signal, and warmer colors represent higher cross-map skill.](westend_xmap_all.png)
 
-From this plot, we can draw a few conclusions. The five physical forcing variables are represented in the first five columns, followed by the four brown algaes, and then the invertebrates. Many physical variables show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows a causal link to all species except *Laminaria*, and SST, which shows a link to all species except *Eisenia* and *Patiria*.
+From this plot, we can draw a few conclusions. The five physical forcing variables are represented in the first five columns, followed by the three brown algaes, and then the invertebrates. Many physical variables show causal relationships with kelp forest species, especially the North Pacific Gyre Oscillation, which shows a causal link to all species except *Laminaria*, and SST, which shows a link to all species except *Eisenia* and *Patiria*.
 
 The strongest relative forcing variables of giant kelp dynamics ("Mac.pyr" row) are purple urchins *Strongylocentrotus purpuratus*, the understory alga *Eisenia arborea*,the wavy turban snail *Megastraea undosa*, sea surface temperature, and the NPGO. The adult *Macrocystis pyrifera* in turn has a strong causal effect on many species, including *Laminaria* and *Pterygophora californica*, purple urchin, and red urchin *S. franciscanus*.
 
@@ -601,33 +605,34 @@ par(mfrow=c(1,1))
 
 # Variable names
 names <- sapply(V(g)$name, function(x) fullkey$plotting[match(x,fullkey$short)])
-names [11:15] <- c("MEI","PDO","NPGO","Max Hs","SST")
+names [10:14] <- c("MEI","PDO","NPGO","Max Hs","SST")
 
-# Vertex labels
+# Vertex labels, specifying number of causal connections
 V(g)$name <-names
 vert_in <- sapply(degree(g,mode="in"),function(x) paste0("(",x,")"))
 vert_out_in <- paste0(degree(g,mode="out"),vert_in)
 V(g)$label <- paste(sep="\n",V(g)$name, vert_out_in)
 
 # vector of node colors for plotting
-vert.cols <- c(rep("tan3",4),"orchid3","tan3",rep("orchid3",2),"darkseagreen","tan3",rep("gray70",5))
+vert.cols <- c(rep("tan3",3),"orchid3","tan3",rep("orchid3",2),"darkseagreen","tan3",rep("gray70",5))
 
 # Vertex layout
-vert.lay <- as.matrix(read.csv(paste0(W_D,"/data/westend_causal_web_coords.csv"),header = F))
+# write.csv(tk_coords(5),file=paste0(W_D,"/data/westend_causal_web_coords.csv"))
+# vert.lay <- as.matrix(read.csv(paste0(W_D,"/data/westend_causal_web_coords.csv")))
 
-plot(g,asp=0.8, vertex.label.color="black", vertex.label.cex=0.8, edge.arrow.size=0.6,vertex.label.font=2, vertex.size=25,edge.lty=2,edge.color="gray80",vertex.frame.color=F,vertex.color=vert.cols,main="",layout=vert.lay,edge.curved=F)
+plot(g, vertex.label.color="black", vertex.label.cex=0.8, edge.arrow.size=0.6,vertex.label.font=2, vertex.size=25,edge.lty=2,edge.color="gray80",vertex.frame.color=NA,vertex.color=vert.cols,main="",edge.curved=F)
 
-legend(x=0.6, y=-1, c("Brown Algae","Echinoderms", "Gastropods","Physical Forcing"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen","gray70"),pt.cex=2, cex=1, bty="n", ncol=1,text.col="black")
+legend(x=-0.6, y=-1, c("Brown Algae","Echinoderms", "Gastropods","Physical Forcing"), pch=21, pt.bg=c("tan3","orchid3","darkseagreen","gray70"),pt.cex=2, cex=1, bty="n", ncol=1,text.col="black")
 ```
 
-In this network, each node represents a variable, and the numbers associated with each are the number of causal connections in the web, outgoing and (incoming). The potential maximum incoming connections is 15 (16 total variables minus itself), and the maximum outgoing is 10 (subtracting the physical variables). We can make a number of observations from this web. For example:
+In this network, each node represents a variable, and the numbers associated with each are the number of causal connections in the web, outgoing and (incoming). The potential maximum incoming connections is 13 (14 total variables minus itself), and the maximum outgoing is 8 (subtracting the physical variables). We can make a number of observations from this web. For example:
 
 * Kelp forests are dynamically complex, with an intricate network of causal interactions between species. There are many bi-directional signals, and therefore not as much clear unidirectional causation. This is not surprising, as we would expect that, e.g., the algaes and herbivores would affect each other.
-* Macrocystis itself (a primary producer) and *Cystoseira* are central to dynamics, having the most total connections, followed by the two urchin species, the gastropod *Megastraea undosa*, and the understory kelps.
+* Macrocystis itself (a primary producer) and the two urchin species are central to dynamics, having the most total connections, followed by the gastropod *Megastraea undosa* and the understory kelps.
 
-It is clear, even from our constrained food web, that the dynamics of each species rely on almost all other species, and hence a comprehensive understanding of a kelp forest communities necessarily requires consideration of not just linear trophic interactions, but an appreciation of the full web of interacting species. Given that these species are so interconnected, it may be that we could better predict dynamics, and can take a step towards a more mechanistic understanding of the interactions suggested from the CCM analysis. 
+It is clear, even from our constrained food web, that the dynamics of each species rely on a number of other species, and hence a comprehensive understanding of a kelp forest communities necessarily requires consideration of not just linear trophic interactions, but an appreciation of the full web of interacting species. Given that these species are so interconnected, it may be that we could better predict dynamics, and can take a step towards a more mechanistic understanding of the interactions suggested from the CCM analysis, by explicitly considering multivariate models.
 
-We now have evidence that adult *Macrocystis pyrifera* drives *Pterygophora californica* dynamics, but is their interaction competitive? Does the strength of the interaction change when more nutrients are available? Do the gastropod *Megastraea undosa* and the red urchin *Strongylocentrotus fransciscanus* compete? Or do they perhaps display apparent mutualism through their mediating effects on algal competetive interactions?  Informed by the outcomes of the univariate and cross-mapping analyses, we can explicitly examine the strength and direction of species' interactions through time by building composite attractors from multiple species' time series.
+We now have evidence that adult *Macrocystis pyrifera* drives *Pterygophora californica* dynamics, but is their interaction competitive? Does the strength of the interaction change when more nutrients are available? Do the red urchin *Strongylocentrotus fransciscanus* and the purple urchin *S. fransciscanus* compete? Or do they perhaps display apparent positive effects on one another through their mediating effects on algal competetive interactions?  Informed by the outcomes of the univariate and cross-mapping analyses, we can explicitly examine the strength and direction of species' interactions through time by building composite attractors from multiple species' time series.
 
 This is our next task.
 
@@ -645,7 +650,7 @@ Multivariate models have the same structure, except instead of using single vari
 
 To explore dynamic interactions across species, it may be best to use just one multivariate attractor, and then optimize the S-maps for each species separately. Therefore, we are controlling for the same set of interactions across species. Another option would be to separately select the most predictive variables from our set for each species, but that might degrade our ability to draw conclusions.
 
-We choose a subset of species which all show causal links to each other. We can do this with a subset of our cross-mapping exercise from Step 4. We include the NPGO index, SST, and maximum wave height as physical variables that map to almost all our variables.
+We choose a subset of species which all show causal links to each other. We can do this with a subset of our cross-mapping exercise from Step 3. We include the NPGO index, SST, and maximum wave height as physical variables that map to almost all our variables.
 
 ```{r sub smap, include=F,message=F}
 xmap_subset <- function(subspp) {
@@ -659,36 +664,45 @@ xmap_subset <- function(subspp) {
     geom_raster() +
     scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
       guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
-    ggtitle("Kelp Forest Convergent Cross Mapping") +
     xlab("Predictor (Forcing Variable)") +
     ylab("Predicted Variable") +
     theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
   
   xmap_sub_plot
 }
-cohesive.CCM.plot <- xmap_subset(c("mac","purp","cys","wavy","npgo.mean","lam","red","waves.max","sst.mean"))
-cohesive.CCM.plot
+subset.CCM.plot <- xmap_subset(c("mac","purp","pter","npgo.mean","lam","red","ymac"))
+subset.CCM.plot
 ggsave(plot=cohesive.CCM.plot,filename="westend_xmap_subset.png")
 ```
 
+![Kelp Forest Reduced Cross-Mapping. The variables chosen for further analysis include adult Macrocystis, two understory kelp species, and two urchin species.](westend_xmap_subset.png)
+
 ## 4. Testing Hypotheses
 
-This is almost a fully resolved causation web, in that every variable causally links to almost all other variables. We could think of it as a coherent subset of the overall kelp forest dynamic system, and we can be confident that these species all interact closely and therefore that a multivariate manifold using these species is warranted. With three physical variable, three species of algae, and three species of invertebrates, it is also a good microcosm of intermediate complexity, representative of the larger kelp forest community.
+This reduced causation web will allow us to look more closely at species interactions. With three physical variables, three species of algae, and two species of invertebrates, it is a good microcosm of intermediate complexity, representative of some of the dynamics in the larger kelp forest community.
 
-Now we optimize the S-map theta parameter (degree of nonlinearity) for each species individually. In other words, we use the same attractor (same library) for all species, but allow the weights of library vectors to vary across the manifold and for each species individually.
+Now we build a multivariate model for each species, using the causal variables from Step 3. We build an multivariate attractor of these species, and then optimize the S-map $\theta$ parameter (degree of nonlinearity) for each species individually. Tuning $\theta$ allows the weights of library vectors to vary across the manifold, and therefore for estimates of species interactions to be specific to different ecosystem states.
 
 ```{r uniform multivariate embedding,message=F,warning=F}
 # We keep the same embedding for each model fit, but optimize the model (i.e., find best theta and calculate S-maps) for each species individually
 
-species <- c("mac","purp","cys","wavy","lam","red")
-lib.vars <- c(species,"npgo.mean","waves.max","sst.mean")
+species <- c("mac","purp","pter","lam","red","ymac")
+lib.vars <- c(species,"npgo.mean")
+
+### Differences between barren and forest dynamics
+plot(multiblock$red,multiblock$mac,pch=19)
+abline(v=-0.5,lty=2)
+
+multiblock <- multiblock %>% 
+  mutate(state=ifelse((red>-0.5 | mac< -0.5),"barren","forest"))
 
 # Data frame to hold optimal theta, and associated rho and mean absolute error (MAE) associated with the chosen model
 multi.theta <- data_frame(species=species,theta=numeric(length(species)),rho=numeric(length(species)),mae=numeric(length(species)))
 
 # Lists to hold the model for each species, a "long form" of each model for plotting, and a boxplot of interaction coefficients.
 multi.mods <- list()
-coh.long <- list()
+coeffs <- list()
+coeffs.long <- list()
 int.box <- list()
 
 for (i in 1:6) {
@@ -713,46 +727,148 @@ for (i in 1:6) {
   colnames(best_model[[1]]$smap_coefficients) <- c(lib.vars,"const")
   multi.mods[[spp]] <- best_model[[1]]
   
+  # Save interaction coefficients
+  coeffs[[spp]] <- best_model[[1]]$smap_coefficients %>% as.data.frame()
+  names(coeffs[[spp]]) <- c(lib.vars,"const")
+  coeffs[[spp]]$state <- multiblock$state
+  coeffs[[spp]]$period <- multiblock$period
+  multi.mods[[spp]] <- best_model[[1]]
+  
   # long form for plotting
-  coh.long[[spp]] <- multi.mods[[spp]]$smap_coefficients %>% 
-    as.data.frame() %>% 
-    gather(key=effect,value=value,na.rm=T) %>%
+  coeffs.long[[spp]] <- coeffs[[spp]] %>%
+    gather(key=effect,value=value,-state,-period,na.rm=T) %>%
     left_join(fullkey, by=c("effect"="short")) %>%
     mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
     group_by(effect)
   
   # box plot of interactions
   sppname <- fullkey$long[match(spp,fullkey$short)]
-  int.box[[spp]] <- ggplot(coh.long[[spp]],aes(x=pred.name,y=value,fill=effect))+
-  geom_boxplot() +
-  geom_hline(yintercept=0,linetype=2,col="gray40")+
-  xlab("Interacting Variable") +
-  ylab("Coefficient") +
-  ggtitle(paste("Interactive Effects on Dynamics of ",sppname))+
-  guides(fill="none")
-}
-
-## Means and SDs
-effect.means <- function(df) {
-  out <- df %>% group_by(effect,plotting) %>% 
-    na.omit() %>% 
-    summarise(mean=mean(value),sd=sd(value)) %>%
-    mutate(upper=mean+sd,lower=mean-sd)
-  return(out)
-}
-coh.long.means <- lapply(coh.long,effect.means)
-means.plot <- function(df) {
-  plot.out <- ggplot(df,aes(x=plotting,y=mean,ymin=lower,ymax=upper)) +
-    geom_errorbar(width=0.25)+
-    geom_point() +
+  int.box[[spp]]<- ggplot(coeffs.long[[spp]],aes(x=pred.name,y=value,fill=state))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
     xlab("Interacting Variable") +
     ylab("Coefficient") +
-    geom_hline(yintercept=0,linetype=2,col="gray40")
-  return(plot.out)
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", West End"))
 }
-effect.means.plots <- lapply(coh.long.means,means.plot)
+
 ```
 
-```{r, echo=F}
-rm(i,best_model,spp,sppname,temp,opt.stats)
+We now have a trove of new data: data describing interactions between species, interactions that vary with the state of ecosystem. In general, the multivariate models perform well (i.e. achieve good preditive power).
+
+```{r multivariate model stats}
+library(knitr)
+kable(multi.theta,col.names=c("Species","Nonlinearity", "Predictive Skill","MAE"),
+      caption="Multivariate S-map Model Statistics, with nonlinearity, correlation of predictions with observations, and mean absolute error.")
+```
+
+
+### Changes in Species Interactions in Response to Environmental Variables
+
+We can now begin to look at the context-dependecy of species interactions. Let's return to our questions of interest:
+
+  1. Does *Macrocystis* compete with the understory kelps *Laminaria* and *Pterogophora*? Does this interaction depend on available nutrients (in this case, the state of the NPGO)?
+  2. Are *Pterogophora* and *Laminaria* competitive or mutualistic?
+  3. Do the red urchin *Strongylocentrotus fransciscanus* and the purple urchin *S. fransciscanus* compete?
+
+Let's start with the first question. For evidence of competition
+
+```{r looking at ints}
+
+## How do species interaction strengths change under changing environmental conditions?
+## Does this relationship change depending on ecosystem state (forests vs. barrens)
+
+barrens <- filter(multiblock,state=="barren")
+forests <- filter(multiblock,state=="forest")
+coeffs.barrens <- lapply(coeffs,function(x) filter(x,state=="barren"))
+coeffs.forests <- lapply(coeffs,function(x) filter(x,state=="forest"))
+
+sppnames <- fullkey$plotting[match(species,fullkey$short)]
+par(mfrow=c(2,2),oma=c(0,0,2,0),xpd=F)
+barrens.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+for(i in 1:length(species)) {
+  plot(barrens$npgo.mean,coeffs.barrens$lam[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
+  abline(h=0,lty=3)
+  abline(lm(coeffs.barrens$lam[,species[i]]~barrens$npgo.mean),col="blue",lty=2)
+  barrens.ints.coef.pvals[i,"coef"] <- summary(lm(coeffs.barrens$lam[,species[i]]~barrens$npgo.mean))$coefficients[,1][2]
+  barrens.ints.coef.pvals[i,"p"] <- summary(lm(coeffs.barrens$lam[,species[i]]~barrens$npgo.mean))$coefficients[,4][2]
+  title("Interactions with lamrocystis (>1m) in Barrens State", outer=T)
+}
+barrens.ints.coef.pvals
+
+par(mfrow=c(2,2),oma=c(0,0,2,0))
+forests.ints.coef.pvals <- data_frame(species=species,coef=numeric(length(species)),p=numeric(length(species)))
+for(i in 1:length(species)) {
+  plot(forests$npgo.mean,coeffs.forests$lam[,species[i]],
+       xlab="NPGO (nutrients)",ylab="Interaction Strength",main=sppnames[i],ylim=c(-2,2))
+  abline(h=0,lty=3)
+  abline(lm(coeffs.forests$lam[,species[i]]~forests$npgo.mean),col="blue",lty=2)
+  forests.ints.coef.pvals[i,"coef"] <- summary(lm(coeffs.forests$lam[,species[i]]~forests$npgo.mean))$coefficients[,1][2]
+  forests.ints.coef.pvals[i,"p"] <- summary(lm(coeffs.forests$lam[,species[i]]~forests$npgo.mean))$coefficients[,4][2]
+  title("Interactions with lamrocystis (>1m) in Forested State", outer=T)
+}
+forests.ints.coef.pvals
+
+par(mfrow=c(1,1))
+```
+
+
+```{r extra code}
+# Mean interactions over time (across spatial replicates)
+mean_ints <- list()
+mean_ints_plot <- list()
+for(i in 1:length(species)) {
+  spp <- species[i]
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  mean_ints[[spp]] <- coeffs.long[[spp]] %>% 
+    group_by(period,effect) %>% 
+    summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+    mutate(lower=meanint-sdint,upper=meanint+sdint)
+  mean_ints_plot[[spp]] <- ggplot(mean_ints[[spp]],aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    facet_wrap(~effect)+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname, ", West End"))
+}
+
+## Mean densities over time
+mean.dens <- multiblock %>%
+  select(period,one_of(species),npgo.mean) %>%
+  gather("species","dens",-period) %>%
+  group_by(species,period) %>%
+  summarise(meandens=mean(dens,na.rm=T),sddens=sd(dens,na.rm=T),lower=meandens-sddens,upper=meandens+sddens)
+
+mean.dens.plot <- ggplot(mean.dens,aes(x=period,y=meandens,ymin=lower,ymax=upper,col=species)) +
+  geom_pointrange()+
+  geom_line()+
+  xlab("Period")+
+  ylab("Standardized Density")+
+  geom_hline(yintercept=0,linetype=3)
+mean.dens.plot
+
+## Effect of purple urchin on red urchin and otters
+test <- mean_ints$red %>% filter(effect=="purp")
+ggplot(test,aes(x=period,y=meanint))+
+    geom_hline(yintercept=0,linetype=2)+
+    geom_line()+
+    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    xlab("Period")+ylab("Interaction Strength")+
+    ggtitle(paste("Effect of Purple Urchin on Red Urchin"))
+
+# Otter data
+#***********************************
+ott <- read.csv(file=paste(W_D,"/data/Table2_independent_sea_otters.csv",sep=""))
+library(lubridate)
+ott$Date<-as.Date(ott$Date,format="%m/%d/%Y")
+ott$Year <- year(ott$Date)
+ott$Month <- month(ott$Date)
+period.key <- data_frame(year=rep(1980:2011,each=12),month=rep(1:12,32),period=c(rep(NA,5),rep(1,5),rep(2:63,each=6),rep(64,2)))
+ott <- left_join(ott,period.key,by=c("Year"="year","Month"="month"))
+
+par(mfrow=c(2,1))
+plot(test$period,test$meanint,xlab="Period",ylab="Effect",type="l",xlim=c(0,61))
+abline(h=0,lty=3)
+plot(ott$period,ott$West,xlab="Period",ylab="Population",xlim=c(0,61),type="l")
 ```
