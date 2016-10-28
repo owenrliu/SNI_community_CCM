@@ -1162,3 +1162,168 @@ points(westend$period,westend$red,pch=8,col="orange")
 points(westend$period,westend$purp,pch=8,col="purple")
 abline(v=16,col="black")
 ```
+
+For tp=2
+
+```{r general smap model fxn}
+
+smap_select <- function(sitedat,sitesegs,species,causalvars,select=TRUE) {
+
+  nsteps <- length(causalvars)
+  
+  full.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=causalvars,tp=2,target_column = species,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+      
+  if(select) {
+
+    back.mod <- data_frame(ex.var=character(nsteps),rho=numeric(nsteps),theta=numeric(nsteps))
+      
+    back.mod$ex.var[1] <- "none"
+    back.mod$rho[1] <- max(full.mod$rho,na.rm=T)
+    back.mod$theta[1] <- full.mod$theta[full.mod$rho==max(full.mod$rho,na.rm=T)]
+    
+    for(i in 2:nsteps) {
+      # candidate variables are all those that have not yet been selected
+      poss_vars <- setdiff(causalvars,back.mod$ex.var)
+      # Vectors to hold output rho's and thetas
+      out.rho <- numeric(length(poss_vars))
+      names(out.rho) <- poss_vars
+      out.theta <- numeric(length(poss_vars))
+      names(out.theta) <- poss_vars
+      
+      for(j in 1:length(poss_vars)) {
+        # For each iteration, we remove one variable at a time
+        temp_vars <- poss_vars[-j]
+        
+        temp <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=temp_vars,target_column = species,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+        out.rho[j] <- max(temp$rho)
+        out.theta[j] <-  temp$theta[temp$rho==max(temp$rho)][1]
+      }
+      
+      ex.var <- names(out.rho)[out.rho==max(out.rho,na.rm=T)] %>% subset(!is.na(.))
+      back.mod$ex.var[i] <- ex.var
+      back.mod$rho[i] <- out.rho[ex.var]
+      back.mod$theta[i] <- out.theta[ex.var]
+    }
+    
+    print(back.mod)
+    
+    vars.to.exclude <- back.mod$ex.var[1:which(back.mod$rho==max(back.mod$rho))]
+    print(vars.to.exclude)
+    
+    plot(1:nsteps,back.mod$rho,main=c("Backwards Model Selection",species),xlab="Variables Excluded",ylab="Model Predictive Skill",type="l")
+  
+    ## Best model, run with s-map coefficients
+    pars.vars <- setdiff(causalvars,vars.to.exclude)
+    opttheta <- back.mod$theta[back.mod$rho==max(back.mod$rho)]
+    
+    best.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=pars.vars,target_column = species,theta = opttheta, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)
+    
+    # Save interaction coefficients
+    coeffs <- best.mod[[1]]$smap_coefficients %>% as.data.frame()
+    names(coeffs) <- c(pars.vars,"const")
+    coeffs$period <- sitedat$period
+    
+    # long form for plotting
+    coeffs.long <- coeffs %>%
+      gather(key=effect,value=value,-period,na.rm=T) %>%
+      left_join(fullkey, by=c("effect"="short")) %>%
+      mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+      group_by(effect)
+    
+    # box plot of interactions
+    sppname <- fullkey$long[match(species,fullkey$short)]
+    int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value))+
+      geom_boxplot() +
+      geom_hline(yintercept=0,linetype=2,col="gray40")+
+      xlab("Interacting Variable") +
+      ylab("Coefficient") +
+      ggtitle(paste("Interactive Effects on Dynamics of ",sppname))
+  } 
+  
+  else {
+    back.mod <- "none"
+    opttheta <- full.mod$theta[full.mod$rho==max(full.mod$rho)]
+    
+    best.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),tp=2,columns=causalvars,target_column = species,theta = opttheta, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)
+    
+    # Save interaction coefficients
+    coeffs <- best.mod[[1]]$smap_coefficients %>% as.data.frame()
+    names(coeffs) <- c(causalvars,"const")
+    coeffs$period <- sitedat$period
+    
+    # long form for plotting
+    coeffs.long <- coeffs %>%
+      gather(key=effect,value=value,-period,na.rm=T) %>%
+      left_join(fullkey, by=c("effect"="short")) %>%
+      mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+      group_by(effect)
+    
+    # box plot of interactions
+    sppname <- fullkey$long[match(species,fullkey$short)]
+    int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value))+
+      geom_boxplot() +
+      geom_hline(yintercept=0,linetype=2,col="gray40")+
+      xlab("Interacting Variable") +
+      ylab("Coefficient") +
+      ggtitle(paste("Interactive Effects on Dynamics of ",sppname))
+  }
+  
+  ## Outputs (to go in a list)
+
+  outlist <- list(modselect=back.mod,model=best.mod[[1]]$model_output,coeffs=coeffs,coeffs.long= coeffs.long, stats=best.mod[[1]]$stats,plot=int.box)
+  return(outlist)
+}
+
+# Nav Fac
+navfac.multi.mods.tp2 <- lapply(c("mac","purp","lam","ymac"),function(x) {
+  smap_select(navfac,navfac.segs,x,navfac.causal.vars[[x]],select=F)
+})
+names(navfac.multi.mods.tp2) <- c("mac","purp","lam","ymac")
+
+# Dutch
+dutch.multi.mods.tp2 <- lapply(c("mac","purp","pter","ymac"),function(x) {
+  smap_select(dutch,dutch.segs,x,dutch.causal.vars[[x]],select=F)
+})
+names(dutch.multi.mods.tp2) <- c("mac","purp","pter","ymac")
+
+# Daytona
+daytona.multi.mods.tp2 <- lapply(c("mac","purp","lam","red"),function(x) {
+  smap_select(daytona,daytona.segs,x,daytona.causal.vars[[x]],select=F)
+})
+names(daytona.multi.mods.tp2) <- c("mac","purp","lam","red")
+
+# West End
+westend.multi.mods.tp2 <- lapply(c("mac","purp","lam","ymac","red","pter"),function(x) {
+  smap_select(westend,westend.segs,x,westend.causal.vars[[x]],select=F)
+})
+names(westend.multi.mods.tp2) <- c("mac","purp","lam","ymac","red","pter")
+
+# Re-do the West End plots
+
+for(i in 1:length(names(westend.multi.mods.tp2))) {
+  spp <- names(westend.multi.mods.tp2)[i]
+  coeffs <- westend.multi.mods.tp2[[spp]]$coeffs
+  coeffs$barren <- westend$barren
+  westend.multi.mods.tp2[[spp]]$coeffs <- coeffs
+  
+ # long form for plotting
+  coeffs.long <- coeffs %>%
+    gather(key=effect,value=value,-period,-barren,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+ # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value,fill=barren))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
+    xlab("Interacting Variable") +
+    ylab("Coefficient") +
+    scale_fill_discrete()+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", West End"))
+  westend.multi.mods.tp2[[spp]]$plot <- int.box
+  westend.multi.mods.tp2[[spp]]$coeffs.long <- coeffs.long
+}
+rm(spp,sppname,coeffs,coeffs.long,int.box)
+```
