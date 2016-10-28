@@ -1047,6 +1047,7 @@ quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$waves.max)
 quant_reg_plot(daytona$waves.max,daytona.multi.mods$mac$coeffs$waves.max)
 
 # NPGO on herbivory
+par(mfrow=c(2,2))
 quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$purp)
 quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$red)
 quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$purp)
@@ -1326,4 +1327,104 @@ for(i in 1:length(names(westend.multi.mods.tp2))) {
   westend.multi.mods.tp2[[spp]]$coeffs.long <- coeffs.long
 }
 rm(spp,sppname,coeffs,coeffs.long,int.box)
+```
+
+Effect of present Macrocystis on future Laminaria and Pterygophora, 6m and 12m (succession)
+
+```{r succession}
+mac_on_lam <- bind_cols(select(westend.multi.mods$lam$coeffs,mac),select(westend.multi.mods.tp2$lam$coeffs,mac))
+names(mac_on_lam) <- c("six_months","twelve_months")
+mac_on_lam <- mac_on_lam %>% gather("time","int")
+mac_on_pter <- bind_cols(select(westend.multi.mods$pter$coeffs,mac),select(westend.multi.mods.tp2$pter$coeffs,mac))
+names(mac_on_pter) <- c("six_months","twelve_months")
+mac_on_pter <- mac_on_pter %>% gather("time","int")
+
+#Plot
+ggplot(mac_on_lam,aes(x=time,y=int,fill=time)) + geom_boxplot()
+ggplot(mac_on_pter,aes(x=time,y=int,fill=time)) + geom_boxplot()
+```
+
+### Cross-site predictability
+
+```{r multivariate across sites}
+segs_sites <- multiblock %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+navfac.subset.segs <- segs_sites %>% filter(site %in% navfac.sites) %>% select(-site)
+dutch.subset.segs <- segs_sites %>% filter(site %in% dutch.sites) %>% select(-site)
+daytona.subset.segs <- segs_sites %>% filter(site %in% daytona.sites) %>% select(-site)
+westend.subset.segs <- segs_sites %>% filter(site %in% westend.sites) %>% select(-site)
+
+# Nav Fac as Predictor
+navfac_pred_westend <- block_lnlp(multiblock,lib=as.matrix(navfac.subset.segs),pred=as.matrix(westend.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+navfac_pred_dutch <- block_lnlp(multiblock,lib=as.matrix(navfac.subset.segs),pred=as.matrix(dutch.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+navfac_pred_daytona <- block_lnlp(multiblock,lib=as.matrix(navfac.subset.segs),pred=as.matrix(daytona.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+# Dutch as Predictor
+dutch_pred_westend <- block_lnlp(multiblock,lib=as.matrix(dutch.subset.segs),pred=as.matrix(westend.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+dutch_pred_navfac <- block_lnlp(multiblock,lib=as.matrix(dutch.subset.segs),pred=as.matrix(navfac.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+dutch_pred_daytona <- block_lnlp(multiblock,lib=as.matrix(dutch.subset.segs),pred=as.matrix(daytona.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+# Daytona as Predictor
+daytona_pred_westend <- block_lnlp(multiblock,lib=as.matrix(daytona.subset.segs),pred=as.matrix(westend.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+daytona_pred_navfac <- block_lnlp(multiblock,lib=as.matrix(daytona.subset.segs),pred=as.matrix(navfac.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+daytona_pred_dutch <- block_lnlp(multiblock,lib=as.matrix(daytona.subset.segs),pred=as.matrix(dutch.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+# West End as Predictor
+westend_pred_daytona <- block_lnlp(multiblock,lib=as.matrix(westend.subset.segs),pred=as.matrix(daytona.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+westend_pred_navfac <- block_lnlp(multiblock,lib=as.matrix(westend.subset.segs),pred=as.matrix(navfac.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+
+westend_pred_dutch <- block_lnlp(multiblock,lib=as.matrix(westend.subset.segs),pred=as.matrix(dutch.subset.segs),columns=lib.vars,target_column = "mac",theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",save_smap_coefficients=F,silent=T)
+```
+
+### Cross-Season prediction
+
+```{r seasons}
+navfac <- navfac %>% mutate(season=ifelse(period %% 2==0,"spring","fall"))
+dutch <- dutch %>% mutate(season=ifelse(period %% 2==0,"spring","fall"))
+daytona <- daytona %>% mutate(season=ifelse(period %% 2==0,"spring","fall"))
+westend <- westend %>% mutate(season=ifelse(period %% 2==0,"spring","fall"))
+
+calc_season_ints <- function(sitedat,model_list) {
+  int.box.list <- list()
+  for(i in 1:length(model_list)) {
+    spp <- names(model_list)[i]
+    coeffs <- model_list[[spp]]$coeffs
+    coeffs <- coeffs %>% left_join(select(sitedat,period,season), by="period")
+    if("barren" %in% names(coeffs)) {coeffs <- select(coeffs,-barren)}
+   # long form for plotting
+    coeffs.long <- coeffs %>%
+      gather(key=effect,value=value,-period,-season,na.rm=T) %>%
+      left_join(fullkey, by=c("effect"="short")) %>%
+      mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+      group_by(effect)
+    
+   # box plot of interactions
+    sppname <- fullkey$long[match(spp,fullkey$short)]
+    int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value,fill=season))+
+      geom_boxplot() +
+      geom_hline(yintercept=0,linetype=2,col="gray40")+
+      xlab("Interacting Variable") +
+      ylab("Coefficient") +
+      scale_fill_discrete()+
+      ggtitle(paste("Interactive Effects on Dynamics of ",sppname))
+    int.box.list[[spp]] <- int.box
+  }
+  return(int.box.list)
+}
+
+navfac.season.plots <- calc_season_ints(navfac,navfac.multi.mods)
+dutch.season.plots <- calc_season_ints(dutch,dutch.multi.mods)
+daytona.season.plots <- calc_season_ints(daytona,daytona.multi.mods)
+westend.season.plots <- calc_season_ints(westend,westend.multi.mods)
+
 ```
