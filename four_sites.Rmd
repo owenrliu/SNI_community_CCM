@@ -1,0 +1,1164 @@
+---
+title: "Four Site Hypotheses"
+author: "Owen Liu"
+date: "October 27, 2016"
+output: pdf_document
+---
+
+### Import Data
+
+```{r setup, include=FALSE}
+# Here are some R libraries we need
+library(quantreg)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(rEDM)
+library(reshape2)
+library(knitr)
+
+#### Data ####
+# The raw data has been processed into a set of normalized time series elsewhere.
+W_D <- getwd()
+dat.long <- read.csv(paste0(W_D,"/data/benth_data_trim_normalized2016-09-09.csv"))
+
+# our particular species of interest
+study_spp <- c("red","purp","lam","pter","mac","ymac")
+```
+
+We also import a species name key, mostly for reference and plot labeling later.
+
+```{r species key}
+# Species Key for all benthic density species (for reference)
+#*************************************
+spp.key <- read.csv(file=paste(W_D,'/data/Table4_Species_sampled.csv',sep=''),stringsAsFactors = F) # All species, all surveys
+spp.key.bdens <- spp.key %>% 
+  filter(DataSet=="Benthic density") %>%
+  select(-SpeciesCode) %>%
+  rename(dataset=DataSet, long=SpeciesName)
+
+# better names
+spp.key.bdens$short <- c("pat","red","purp","wavy","astro","derm","halc","halr","limp","paras","pis","pyc","cys","lam","ymac","youn","eis","pter","mac")
+# ************************************
+
+# quick function to turn a "genus species" identifier into an abbreviated gen.spe identifier
+abbr.species.names <- function(x) {
+    temp <- strsplit(x," ")[[1]]
+    g <- substr(temp[1],1,3)
+    spe <- substr(temp[2],1,3)
+    paste(g,spe,sep=".")
+}
+
+# Names to apply to plots later
+spp.key.bdens$plotting <- sapply(spp.key.bdens$long,abbr.species.names)
+
+# identify kelp juveniles as a separate variable
+spp.key.bdens$plotting[spp.key.bdens$long=="Macrocystis pyrifera <1m"] <- "Mac.pyr(j)"
+```
+
+Next we produce a block (wide-form) dataset, where each column represents a species' time series.
+
+```{r block data}
+# Cast to wide form
+#*************************************
+benthdat.block <- dat.long %>%
+  select(-dens) %>%
+  spread(key=spp,value=norm) %>%
+  arrange(site)
+#*************************************
+```
+
+Import physical variables
+
+```{r physical variable import}
+# Read in the physical variables
+phys.dat <- read.csv(paste0(W_D,"/data/phys_vars_combined.csv"))
+phys.dat.norm <- read.csv(paste0(W_D,"/data/phys_vars_combined_norm.csv"))
+
+# Combine with benthic biological block data, by period
+multiblock <- benthdat.block %>% left_join(phys.dat.norm,by="period")
+
+phys.vars <- c("mei.mean","pdo.mean","npgo.mean","waves.max","sst.mean")
+
+# Add them to the an overall name key
+phys.vars.key <- data_frame(long=c("Multivariate ENSO Index","Pacific Decadal Oscillation","North Pacific Gyre Oscillation","Significant Wave Height","Sea Surface Temperature"),dataset="Physical",short=phys.vars, plotting=c("(P) MEI","(P) PDO","(P) NPGO","(P) Max Hs","(P) SST"))
+
+fullkey <- bind_rows(spp.key.bdens,phys.vars.key)
+fullkey <- bind_rows(fullkey, data_frame(long="NA",dataset="NA",short="const",plotting="Constant"))
+```
+
+
+Otter data
+
+```{r otters}
+# Otter data
+#***********************************
+ott <- read.csv(file=paste(W_D,"/data/Table2_independent_sea_otters.csv",sep=""))
+library(lubridate)
+ott$Date<-as.Date(ott$Date,format="%m/%d/%Y")
+ott$Year <- year(ott$Date)
+ott$Month <- month(ott$Date)
+period.key <- data_frame(year=rep(1980:2011,each=12),month=rep(1:12,32),period=c(rep(NA,5),rep(1,5),rep(2:63,each=6),rep(64,2)))
+ott <- left_join(ott,period.key,by=c("Year"="year","Month"="month"))
+```
+
+### Split Data by Site
+
+There are four sites: NavFac, Daytona, Dutch Harbor, and West End. We split the data here and do all subsequent analyses on each area separately. Also need to note the breaks between "replicate" time series for each site.
+
+Cut the overall dataset to just variables of interest
+
+```{r variables of interest}
+lib.vars <- c(study_spp,phys.vars)
+```
+
+Nav Fac
+
+```{r navfac data}
+## Nav Fac Data and Segments
+navfac.sites <- c("1_10R", "1_22R", "1_32L", "1_39R", "1_45R")
+navfac <- multiblock %>% filter(site %in% navfac.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+navfac_segs_sites <- navfac %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+navfac.segs <- select(navfac_segs_sites,-site)
+```
+
+Daytona
+
+```{r daytona data}
+daytona.sites <- c("6_10R", "6_22L", "6_22R", "6_32L", "6_39L", "6_39R", "6_45R")
+daytona <- multiblock %>% filter(site %in% daytona.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+daytona_segs_sites <- daytona %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+daytona.segs <- select(daytona_segs_sites,-site)
+```
+
+Dutch Harbor
+
+```{r dutch data}
+dutch.sites <- c("4_10R", "4_22L", "4_32L", "4_39L", "4_45L", "5_10R", "5_22R", "5_32L", "5_39R", "5_45R")
+dutch <- multiblock %>% filter(site %in% dutch.sites) %>% select(period,site,one_of(lib.vars))
+
+# segments
+dutch_segs_sites <- dutch %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+dutch.segs <- select(dutch_segs_sites,-site)
+```
+
+West End
+
+```{r west end data}
+westend.sites <- c("2_10L", '2_22L', "2_32R", "2_39L", "2_45L", "3_10R" ,"3_22R", "3_32L", "3_39R", "3_45L")
+westend.lib.vars <- lib.vars
+westend <- multiblock %>% filter(site %in% westend.sites) %>% select(period,site,one_of(westend.lib.vars))
+
+# segments
+westend_segs_sites <- westend %>%  
+  mutate(ind = row_number()) %>% 
+  group_by(site) %>%
+  summarise(first=first(ind),last=last(ind))
+
+# Time series segments without site identifier. We'll need this later
+westend.segs <- select(westend_segs_sites,-site)
+```
+
+### Simplex
+
+Nav Fac
+
+```{r univariate simplex navfac,fig.height=10,fig.width=7}
+
+# List to store output of simplex projection
+navfac.simp.list <- list()
+
+# Run simplex projection for each species at each site, and plot output
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- navfac %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(navfac.segs),E=2:15,silent=T)
+  navfac.simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+ plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+# Save best embedding dimensions
+navfac.bestE <- sapply(navfac.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+
+rm(spp,dat,out)
+```
+
+Dutch Harbor
+
+```{r univariate simplex dutch,fig.height=10,fig.width=7}
+
+# List to store output of simplex projection
+dutch.simp.list <- list()
+
+# Run simplex projection for each species at each site, and plot output
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dutch %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),E=2:15,silent=T)
+  dutch.simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+# Save best embedding dimensions
+dutch.bestE <- sapply(dutch.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+
+rm(spp,dat,out)
+```
+
+Daytona
+
+```{r univariate simplex daytona,fig.height=10,fig.width=7}
+
+# List to store output of simplex projection
+daytona.simp.list <- list()
+
+# Run simplex projection for each species at each site, and plot output
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- daytona %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(daytona.segs),E=2:15,silent=T)
+  daytona.simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+# Save best embedding dimensions
+daytona.bestE <- sapply(daytona.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+
+rm(spp,dat,out)
+```
+
+West End
+
+```{r univariate simplex westend,fig.height=10,fig.width=7}
+
+# List to store output of simplex projection
+westend.simp.list <- list()
+
+# Run simplex projection for each species at each site, and plot output
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- westend %>% select(matches(spp)) %>% as.data.frame()
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(westend.segs),E=2:15,silent=T)
+  westend.simp.list[[spp]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+
+# Save best embedding dimensions
+westend.bestE <- sapply(westend.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+
+rm(spp,dat,out)
+```
+
+### Prediction Horizon
+
+Nav Fac
+
+```{r prediction horizon navfac,fig.height=10,fig.width=7}
+# List to hold prediction horizon results
+tp.list <- list()
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- navfac %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(navfac.segs),silent=T,E=navfac.bestE[spp],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+Dutch
+
+```{r prediction horizon dutch,fig.height=10,fig.width=7}
+# List to hold prediction horizon results
+tp.list <- list()
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dutch %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),silent=T,E=dutch.bestE[spp],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+Daytona
+
+```{r prediction horizon daytona,fig.height=10,fig.width=7}
+# List to hold prediction horizon results
+tp.list <- list()
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- daytona %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(daytona.segs),silent=T,E=daytona.bestE[spp],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+West End
+
+```{r prediction horizon westend,fig.height=10,fig.width=7}
+# List to hold prediction horizon results
+tp.list <- list()
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- westend %>% select(matches(spp))
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(westend.segs),silent=T,E=westend.bestE[spp],tp=1:10)
+  tp.list[[spp]] <- out
+  
+  # Plot time horizon vs. predictive ability (rho)
+  plot(out$tp,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Time to Prediction",ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+### S-maps for Each Species
+
+Nav Fac
+
+```{r univariate s_maps navfac,fig.height=10,fig.width=7}
+navfac.smap.list <- list() # list to store output
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- navfac %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(navfac.segs),E=navfac.bestE[spp],silent=T)
+  navfac.smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+Dutch
+
+```{r univariate s_maps dutch,fig.height=10,fig.width=7}
+dutch.smap.list <- list() # list to store output
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- dutch %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),E=dutch.bestE[spp],silent=T)
+  dutch.smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+Daytona
+
+```{r univariate s_maps daytona,fig.height=10,fig.width=7}
+daytona.smap.list <- list() # list to store output
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- daytona %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(daytona.segs),E=daytona.bestE[spp],silent=T)
+  daytona.smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+West End
+
+```{r univariate s_maps westend,fig.height=10,fig.width=7}
+westend.smap.list <- list() # list to store output
+
+par(mfrow=c(3,2))
+for(i in 1:length(study_spp)) {
+  spp <- study_spp[i]
+  dat <- westend %>% select(matches(spp))
+  out <- s_map(as.numeric(dat[,1]),lib=as.matrix(westend.segs),E=westend.bestE[spp],silent=T)
+  westend.smap.list[[spp]] <- out
+  
+  # Plot theta dimension vs. predictive ability (rho)
+  plot(out$theta,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab=expression(paste("Nonlinearity (",theta,")")), ylab=expression(paste("Skill, ",rho)))
+}
+rm(spp,dat,out)
+```
+
+### Simplex physical variables (same for all sites)
+
+```{r simplex physical variables,fig.height=10,fig.width=7}
+# Run simplex for each physical variable
+par(mfrow=c(3,2))
+phys.simp.list <- list()
+for(i in 1:length(phys.vars)) {
+  ind <- phys.vars[i]
+  dat <- multiblock %>% select(matches(ind))
+  out <- simplex(as.numeric(dat[,1]),lib=c(1,63),E=2:10,silent=T)
+  phys.simp.list[[ind]] <- out
+  navfac.simp.list[[ind]] <- out
+  dutch.simp.list[[ind]] <- out
+  daytona.simp.list[[ind]] <- out
+  westend.simp.list[[ind]] <- out
+  
+  # Plot embedding dimension vs. predictive ability (rho)
+  plot(out$E,out$rho,type="l",main=fullkey$long[match(ind,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
+}
+rm(ind,dat,out)
+```
+
+Save best embedding dimensions
+```{r best E}
+phys.bestE <- sapply(phys.simp.list,function(x) {
+  temp <- x %>% filter(!is.na(rho))
+  temp$E[temp$rho==max(temp$rho)]
+})
+navfac.bestE <- c(navfac.bestE,phys.bestE)
+dutch.bestE <- c(dutch.bestE,phys.bestE)
+daytona.bestE <- c(daytona.bestE,phys.bestE)
+westend.bestE <- c(westend.bestE,phys.bestE)
+```
+
+### Convergent Cross Mapping by Site
+
+Nav Fac
+
+```{r ccm all species and physical vars navfac}
+# Rows hold predicted variables, columns hold forcing variables. There are more columns than rows since the physical variables are included as potential forcing factors.
+n_col <- dim(navfac)[2]-2
+n_row <- dim(navfac)[2]-7
+col_names <- colnames(navfac)[3:(n_col+2)]
+row_names <- colnames(navfac)[3:(n_row+2)]
+navfac.xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+navfac.p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).
+navfac.p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+navfac.ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=navfac.bestE[col_names[j]]
+      temp <- ccm(navfac,lib=as.matrix(navfac.segs),pred=as.matrix(navfac.segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,300),num_samples=100,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==300) %>% ccm_means()
+      navfac.xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at library size 300)
+      p1 <- temp %>% filter(lib_size==300) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      navfac.p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==300])$p.value
+      navfac.p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      navfac.ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+rm(n_col,n_row,col_names,row_names,p1,p2,tempE,temp,rhomean)
+
+# keep only signficant cross-mappings
+navfac.xmap_mat <- navfac.xmap_mat*navfac.ptot.mat %>% as.data.frame()
+navfac.xmap_rast <- navfac.xmap_mat %>% 
+  mutate(predictee=row.names(navfac.xmap_mat)) %>% 
+  gather(key=predictor,value=rho,-predictee)
+
+# If rho is zero, replace with NA (no significant causal signal)
+navfac.xmap_rast$rho[navfac.xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+navfac.xmap_rast <- navfac.xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+navfac.xmap_all_plot <- ggplot(navfac.xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping, Nav Fac") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+navfac.xmap_all_plot
+```
+
+Dutch
+
+```{r ccm all species and physical vars dutch}
+# Rows hold predicted variables, columns hold forcing variables. There are more columns than rows since the physical variables are included as potential forcing factors.
+n_col <- dim(dutch)[2]-2
+n_row <- dim(dutch)[2]-7
+col_names <- colnames(dutch)[3:(n_col+2)]
+row_names <- colnames(dutch)[3:(n_row+2)]
+dutch.xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+dutch.p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).
+dutch.p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+dutch.ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=dutch.bestE[col_names[j]]
+      temp <- ccm(dutch,lib=as.matrix(dutch.segs),pred=as.matrix(dutch.segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,300),num_samples=100,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==300) %>% ccm_means()
+      dutch.xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at library size 300)
+      p1 <- temp %>% filter(lib_size==300) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      dutch.p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==300])$p.value
+      dutch.p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      dutch.ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+rm(n_col,n_row,col_names,row_names,p1,p2,tempE,temp,rhomean)
+
+# keep only signficant cross-mappings
+dutch.xmap_mat <- dutch.xmap_mat*dutch.ptot.mat %>% as.data.frame()
+dutch.xmap_rast <- dutch.xmap_mat %>% 
+  mutate(predictee=row.names(dutch.xmap_mat)) %>% 
+  gather(key=predictor,value=rho,-predictee)
+
+# If rho is zero, replace with NA (no significant causal signal)
+dutch.xmap_rast$rho[dutch.xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+dutch.xmap_rast <- dutch.xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+dutch.xmap_all_plot <- ggplot(dutch.xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping, Dutch Harbor") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+dutch.xmap_all_plot
+```
+
+Daytona
+
+```{r ccm all species and physical vars daytona}
+# Rows hold predicted variables, columns hold forcing variables. There are more columns than rows since the physical variables are included as potential forcing factors.
+n_col <- dim(daytona)[2]-2
+n_row <- dim(daytona)[2]-7
+col_names <- colnames(daytona)[3:(n_col+2)]
+row_names <- colnames(daytona)[3:(n_row+2)]
+daytona.xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+daytona.p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).
+daytona.p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+daytona.ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=daytona.bestE[col_names[j]]
+      temp <- ccm(daytona,lib=as.matrix(daytona.segs),pred=as.matrix(daytona.segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,300),num_samples=100,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==300) %>% ccm_means()
+      daytona.xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at library size 300)
+      p1 <- temp %>% filter(lib_size==300) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      daytona.p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==300])$p.value
+      daytona.p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      daytona.ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+rm(n_col,n_row,col_names,row_names,p1,p2,tempE,temp,rhomean)
+
+# keep only signficant cross-mappings
+daytona.xmap_mat <- daytona.xmap_mat*daytona.ptot.mat %>% as.data.frame()
+daytona.xmap_rast <- daytona.xmap_mat %>% 
+  mutate(predictee=row.names(daytona.xmap_mat)) %>% 
+  gather(key=predictor,value=rho,-predictee)
+
+# If rho is zero, replace with NA (no significant causal signal)
+daytona.xmap_rast$rho[daytona.xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+daytona.xmap_rast <- daytona.xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+daytona.xmap_all_plot <- ggplot(daytona.xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping, Daytona") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+daytona.xmap_all_plot
+```
+
+West End
+
+```{r ccm all species and physical vars westend}
+# Rows hold predicted variables, columns hold forcing variables. There are more columns than rows since the physical variables are included as potential forcing factors.
+n_col <- dim(westend)[2]-2
+n_row <- dim(westend)[2]-7
+col_names <- colnames(westend)[3:(n_col+2)]
+row_names <- colnames(westend)[3:(n_row+2)]
+westend.xmap_mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 1: cross-map skill greater than zero
+# matrix to store a bootstrapped p-value, measuring the probability that a given xmap is greater than zero (calculated as 1 minus the number of positive results for rho divided by the number of iterations)
+westend.p1.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## CCM causation criterion 2: evidence for convergence
+# similarly, matrix to store a bootstrapped p-value, this time a t-test value between library size 10 and library size 500, to see if the rho at large library is significantly greater than the rho at small library size (i.e., looking for convergence).
+westend.p2.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+# if both p1 and p2 are positive, indicate overall significant causal signal
+westend.ptot.mat <- array(NA,dim=c(n_row,n_col),dimnames=list(row_names,col_names))
+
+## Run CCM for each combination of variables
+for(i in 1:n_row) {
+  for(j in 1:n_col) {
+    if(i != j) {
+      # remember, we use the best embedding dimension for the target variable (the variable we're cross-mapping to, i.e. the putative forcing variable)
+      tempE=westend.bestE[col_names[j]]
+      temp <- ccm(westend,lib=as.matrix(westend.segs),pred=as.matrix(westend.segs),E=tempE,lib_column= 2+i,target_column = 2+j,lib_sizes = c(10,300),num_samples=100,replace=T,silent=T)
+      # mean rho at library size 500
+      rhomean <- temp %>% filter(lib_size==300) %>% ccm_means()
+      westend.xmap_mat[i,j] <- rhomean$rho
+      
+      # first p-value (greater than zero? at library size 300)
+      p1 <- temp %>% filter(lib_size==300) %>% 
+        mutate(pos=ifelse(rho>0,1,0)) %>%
+        summarise(p=(1-sum(pos)/n()))
+      westend.p1.mat[i,j] <- as.numeric(p1)
+      
+      # second p-value (rho at lib-size 500 greater than rho at lib-size 10?)
+      p2 <- t.test(temp$rho[temp$lib_size==10],temp$rho[temp$lib_size==300])$p.value
+      westend.p2.mat[i,j] <- as.numeric(p2)
+      
+      # overall significance (both p1 and p2 signficant at alpha 0.05)
+      westend.ptot.mat[i,j] <- ifelse(p1<0.05 & p2<0.05,1,0)
+    }
+  }
+}
+rm(n_col,n_row,col_names,row_names,p1,p2,tempE,temp,rhomean)
+
+# keep only signficant cross-mappings
+westend.xmap_mat <- westend.xmap_mat*westend.ptot.mat %>% as.data.frame()
+westend.xmap_rast <- westend.xmap_mat %>% 
+  mutate(predictee=row.names(westend.xmap_mat)) %>% 
+  gather(key=predictor,value=rho,-predictee)
+
+# If rho is zero, replace with NA (no significant causal signal)
+westend.xmap_rast$rho[westend.xmap_rast$rho==0] <- NA
+
+# Names for plotting to distinguish biological and physical variables
+westend.xmap_rast <- westend.xmap_rast %>% 
+  mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+  mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+
+## plot
+westend.xmap_all_plot <- ggplot(westend.xmap_rast,aes(x=force.name,y=pred.name,fill=rho)) +
+  geom_raster() +
+  scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+  ggtitle("Kelp Forest Convergent Cross Mapping, West End") +
+  xlab("Predictor (Forcing Variable)") +
+  ylab("Predicted Variable") +
+  theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+
+westend.xmap_all_plot
+```
+
+All cross-map plots. very interesting...
+
+```{r xmap plots}
+navfac.xmap_all_plot
+dutch.xmap_all_plot
+daytona.xmap_all_plot
+westend.xmap_all_plot
+```
+
+### Multivariate Models Using CCM results
+
+For each site and each species, we'll only use the variables that show a causal link, also removing those that did not pass diagnositic tests (simplex or prediction horizon).
+
+```{r xmap subset}
+xmap_subset <- function(xmap_rast,subspp) {
+  subrast <- xmap_rast %>% 
+    filter(predictee %in% subspp & predictor %in% subspp)%>%
+    mutate(force.name=fullkey$plotting[match(predictor,fullkey$short)]) %>%
+    mutate(pred.name=fullkey$plotting[match(predictee,fullkey$short)])
+  
+  ## plot
+  xmap_sub_plot <- ggplot(subrast,aes(x=force.name,y=pred.name,fill=rho)) +
+    geom_raster() +
+    scale_fill_gradient(low = "#9AFF9A", high = "#548B54", space = "Lab", na.value = "grey50", 
+      guide = "colourbar",name=expression(paste(rho, "(skill)"))) +
+    ggtitle("Kelp Forest Convergent Cross Mapping") +
+    xlab("Predictor (Forcing Variable)") +
+    ylab("Predicted Variable") +
+    theme(axis.text.x=element_text(angle = 90, hjust = 1,vjust=0.1))
+  
+  xmap_sub_plot
+}
+```
+
+Find the causal variables for each species in each place.
+
+```{r causal vars fxn}
+causal_vars <- function(pmat,vars) {
+  out <- list()
+  for(i in 1:length(vars)) {
+    v <- vars[i]
+    causes <- colnames(pmat)[pmat[v,]==1]
+    causes <- causes[!is.na(causes)&causes!="sst.mean"]
+    out[[v]] <- c(causes,v)
+  }
+  return(out)
+}
+navfac.causal.vars <- causal_vars(navfac.ptot.mat,vars=c("mac","purp","lam","ymac"))
+dutch.causal.vars <- causal_vars(dutch.ptot.mat,vars=c("mac","purp","pter","ymac"))
+daytona.causal.vars <- causal_vars(daytona.ptot.mat,vars=c("mac","purp","lam","red"))
+westend.causal.vars <- causal_vars(westend.ptot.mat,vars=c("mac","purp","lam","ymac","red","pter"))
+```
+
+Generalized function to fit a multivariate S-map model using backwards selection, starting with a subset of the causal variables
+
+```{r general smap model fxn}
+smap_select <- function(sitedat,sitesegs,species,causalvars,select=TRUE) {
+
+  nsteps <- length(causalvars)
+  
+  full.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=causalvars,target_column = species,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+      
+  if(select) {
+
+    back.mod <- data_frame(ex.var=character(nsteps),rho=numeric(nsteps),theta=numeric(nsteps))
+      
+    back.mod$ex.var[1] <- "none"
+    back.mod$rho[1] <- max(full.mod$rho,na.rm=T)
+    back.mod$theta[1] <- full.mod$theta[full.mod$rho==max(full.mod$rho,na.rm=T)]
+    
+    for(i in 2:nsteps) {
+      # candidate variables are all those that have not yet been selected
+      poss_vars <- setdiff(causalvars,back.mod$ex.var)
+      # Vectors to hold output rho's and thetas
+      out.rho <- numeric(length(poss_vars))
+      names(out.rho) <- poss_vars
+      out.theta <- numeric(length(poss_vars))
+      names(out.theta) <- poss_vars
+      
+      for(j in 1:length(poss_vars)) {
+        # For each iteration, we remove one variable at a time
+        temp_vars <- poss_vars[-j]
+        
+        temp <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=temp_vars,target_column = species,theta = c(0, 1e-04, 3e-04, 0.001,0.003, 0.01, 0.1, 0.5, 1, 2, 4, 6,8), num_neighbors=0,method="s-map",silent=T)
+        out.rho[j] <- max(temp$rho)
+        out.theta[j] <-  temp$theta[temp$rho==max(temp$rho)][1]
+      }
+      
+      ex.var <- names(out.rho)[out.rho==max(out.rho,na.rm=T)] %>% subset(!is.na(.))
+      back.mod$ex.var[i] <- ex.var
+      back.mod$rho[i] <- out.rho[ex.var]
+      back.mod$theta[i] <- out.theta[ex.var]
+    }
+    
+    print(back.mod)
+    
+    vars.to.exclude <- back.mod$ex.var[1:which(back.mod$rho==max(back.mod$rho))]
+    print(vars.to.exclude)
+    
+    plot(1:nsteps,back.mod$rho,main=c("Backwards Model Selection",species),xlab="Variables Excluded",ylab="Model Predictive Skill",type="l")
+  
+    ## Best model, run with s-map coefficients
+    pars.vars <- setdiff(causalvars,vars.to.exclude)
+    opttheta <- back.mod$theta[back.mod$rho==max(back.mod$rho)]
+    
+    best.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=pars.vars,target_column = species,theta = opttheta, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)
+    
+    # Save interaction coefficients
+    coeffs <- best.mod[[1]]$smap_coefficients %>% as.data.frame()
+    names(coeffs) <- c(pars.vars,"const")
+    coeffs$period <- sitedat$period
+    
+    # long form for plotting
+    coeffs.long <- coeffs %>%
+      gather(key=effect,value=value,-period,na.rm=T) %>%
+      left_join(fullkey, by=c("effect"="short")) %>%
+      mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+      group_by(effect)
+    
+    # box plot of interactions
+    sppname <- fullkey$long[match(species,fullkey$short)]
+    int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value))+
+      geom_boxplot() +
+      geom_hline(yintercept=0,linetype=2,col="gray40")+
+      xlab("Interacting Variable") +
+      ylab("Coefficient") +
+      ggtitle(paste("Interactive Effects on Dynamics of ",sppname))
+  } 
+  
+  else {
+    back.mod <- "none"
+    opttheta <- full.mod$theta[full.mod$rho==max(full.mod$rho)]
+    
+    best.mod <- block_lnlp(sitedat,lib=as.matrix(sitesegs),pred=as.matrix(sitesegs),columns=causalvars,target_column = species,theta = opttheta, num_neighbors=0,method="s-map",save_smap_coefficients=T,silent=T)
+    
+    # Save interaction coefficients
+    coeffs <- best.mod[[1]]$smap_coefficients %>% as.data.frame()
+    names(coeffs) <- c(causalvars,"const")
+    coeffs$period <- sitedat$period
+    
+    # long form for plotting
+    coeffs.long <- coeffs %>%
+      gather(key=effect,value=value,-period,na.rm=T) %>%
+      left_join(fullkey, by=c("effect"="short")) %>%
+      mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+      group_by(effect)
+    
+    # box plot of interactions
+    sppname <- fullkey$long[match(species,fullkey$short)]
+    int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value))+
+      geom_boxplot() +
+      geom_hline(yintercept=0,linetype=2,col="gray40")+
+      xlab("Interacting Variable") +
+      ylab("Coefficient") +
+      ggtitle(paste("Interactive Effects on Dynamics of ",sppname))
+  }
+  
+  ## Outputs (to go in a list)
+
+  outlist <- list(modselect=back.mod,model=best.mod[[1]]$model_output,coeffs=coeffs,coeffs.long= coeffs.long, stats=best.mod[[1]]$stats,plot=int.box)
+  return(outlist)
+}
+```
+
+Apply to sites
+
+```{r site library vars}
+# Nav Fac
+navfac.multi.mods <- lapply(c("mac","purp","lam","ymac"),function(x) {
+  smap_select(navfac,navfac.segs,x,navfac.causal.vars[[x]],select=F)
+})
+names(navfac.multi.mods) <- c("mac","purp","lam","ymac")
+
+# Dutch
+dutch.multi.mods <- lapply(c("mac","purp","pter","ymac"),function(x) {
+  smap_select(dutch,dutch.segs,x,dutch.causal.vars[[x]],select=F)
+})
+names(dutch.multi.mods) <- c("mac","purp","pter","ymac")
+
+# Daytona
+daytona.multi.mods <- lapply(c("mac","purp","lam","red"),function(x) {
+  smap_select(daytona,daytona.segs,x,daytona.causal.vars[[x]],select=F)
+})
+names(daytona.multi.mods) <- c("mac","purp","lam","red")
+
+# West End
+westend.multi.mods <- lapply(c("mac","purp","lam","ymac","red","pter"),function(x) {
+  smap_select(westend,westend.segs,x,westend.causal.vars[[x]],select=F)
+})
+names(westend.multi.mods) <- c("mac","purp","lam","ymac","red","pter")
+```
+
+West End has shown switches between barrens and non-barrens. Let's look at difference. From observing the data, we see that 
+
+```{r barrens nonbarrens}
+plot(westend$red,westend$mac,xlab="Red Urchin Density (normalized)",ylab="Macrocystis adult density (normalized)")
+abline(v=-0.5,col="red",lty=2)
+
+# We use this as our cutoff and assign a state to each dataset
+westend <- westend %>% mutate(barren=ifelse(red>-0.5,"barren","non-barren"))
+
+# Re-do the plots
+
+for(i in 1:length(names(westend.multi.mods))) {
+  spp <- names(westend.multi.mods)[i]
+  coeffs <- westend.multi.mods[[spp]]$coeffs
+  coeffs$barren <- westend$barren
+  westend.multi.mods[[spp]]$coeffs <- coeffs
+  
+ # long form for plotting
+  coeffs.long <- coeffs %>%
+    gather(key=effect,value=value,-period,-barren,na.rm=T) %>%
+    left_join(fullkey, by=c("effect"="short")) %>%
+    mutate(pred.name=fullkey$plotting[match(effect,fullkey$short)]) %>%
+    group_by(effect)
+  
+ # box plot of interactions
+  sppname <- fullkey$long[match(spp,fullkey$short)]
+  int.box <- ggplot(coeffs.long,aes(x=pred.name,y=value,fill=barren))+
+    geom_boxplot() +
+    geom_hline(yintercept=0,linetype=2,col="gray40")+
+    xlab("Interacting Variable") +
+    ylab("Coefficient") +
+    scale_fill_discrete()+
+    ggtitle(paste("Interactive Effects on Dynamics of ",sppname,", West End"))
+  westend.multi.mods[[spp]]$plot <- int.box
+  westend.multi.mods[[spp]]$coeffs.long <- coeffs.long
+}
+rm(spp,sppname,coeffs,coeffs.long,int.box)
+```
+
+Quantile regression plots
+```{r quantreg}
+quant_reg_plot <- function(x,y,lvl=0.95,...) {
+  qL <- rq(y ~ x,(1-lvl)) 
+  qU <- rq(y ~ x,lvl)
+  plot(x,y,pch=8,cex=0.5,...)
+  abline(lm(y~x),col="blue",lty=2)
+  abline(a=qL$coefficients[1],b=qL$coefficients[2],lty=2,col="red",lwd=2)
+  abline(a=qU$coefficients[1],b=qU$coefficients[2],lty=2,col="red",lwd=2)
+  abline(h=0,lty=3)
+}
+par(mfrow=c(2,2))
+
+#NPGO on competitive dominance (mac over understory)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$mac)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(daytona$npgo.mean,daytona.multi.mods$lam$coeffs$mac)
+
+# Waves on competitive dominance (mac over understory)
+quant_reg_plot(westend$waves.max,westend.multi.mods$lam$coeffs$mac)
+quant_reg_plot(westend$waves.max,westend.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(daytona$waves.max,daytona.multi.mods$lam$coeffs$mac)
+
+# Waves on wave effect of macrocystis
+quant_reg_plot(westend$waves.max,westend.multi.mods$mac$coeffs$waves.max)
+quant_reg_plot(navfac$waves.max,navfac.multi.mods$mac$coeffs$waves.max)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$waves.max)
+quant_reg_plot(daytona$waves.max,daytona.multi.mods$mac$coeffs$waves.max)
+
+# NPGO on herbivory
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$purp)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$red)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$purp)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$red)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$ymac$coeffs$purp)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$ymac$coeffs$red)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$purp)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$red)
+
+quant_reg_plot(navfac$npgo.mean,navfac.multi.mods$mac$coeffs$purp)
+quant_reg_plot(navfac$npgo.mean,navfac.multi.mods$lam$coeffs$purp)
+quant_reg_plot(navfac$npgo.mean,navfac.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(daytona$npgo.mean,daytona.multi.mods$mac$coeffs$purp)
+quant_reg_plot(daytona$npgo.mean,daytona.multi.mods$lam$coeffs$purp)
+
+## MEI on Competitive Dominance
+quant_reg_plot(westend$mei.mean,westend.multi.mods$lam$coeffs$mac)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$mei.mean,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(daytona$mei.mean,daytona.multi.mods$lam$coeffs$mac)
+
+## PDO on Competitive Dominance
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$lam$coeffs$mac)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(daytona$pdo.mean,daytona.multi.mods$lam$coeffs$mac)
+
+# MEI on herbivory
+quant_reg_plot(westend$mei.mean,westend.multi.mods$lam$coeffs$purp)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$lam$coeffs$red)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$pter$coeffs$purp)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$pter$coeffs$red)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$ymac$coeffs$purp)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$ymac$coeffs$red)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$mac$coeffs$purp)
+quant_reg_plot(westend$mei.mean,westend.multi.mods$mac$coeffs$red)
+
+quant_reg_plot(navfac$mei.mean,navfac.multi.mods$mac$coeffs$purp)
+quant_reg_plot(navfac$mei.mean,navfac.multi.mods$lam$coeffs$purp)
+quant_reg_plot(navfac$mei.mean,navfac.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(dutch$mei.mean,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$mei.mean,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$mei.mean,dutch.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(daytona$mei.mean,daytona.multi.mods$mac$coeffs$purp)
+quant_reg_plot(daytona$mei.mean,daytona.multi.mods$lam$coeffs$purp)
+
+# PDO on herbivory
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$lam$coeffs$purp)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$lam$coeffs$red)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$pter$coeffs$purp)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$pter$coeffs$red)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$ymac$coeffs$purp)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$ymac$coeffs$red)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$mac$coeffs$purp)
+quant_reg_plot(westend$pdo.mean,westend.multi.mods$mac$coeffs$red)
+
+quant_reg_plot(navfac$pdo.mean,navfac.multi.mods$mac$coeffs$purp)
+quant_reg_plot(navfac$pdo.mean,navfac.multi.mods$lam$coeffs$purp)
+quant_reg_plot(navfac$pdo.mean,navfac.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$ymac$coeffs$purp)
+
+quant_reg_plot(daytona$pdo.mean,daytona.multi.mods$mac$coeffs$purp)
+quant_reg_plot(daytona$pdo.mean,daytona.multi.mods$lam$coeffs$purp)
+
+```
+
+Interactions over time
+
+```{r ints over time}
+calc_mean_ints <- function(coeffs.long) {
+
+  cvars <- unique(coeffs.long$effect)
+  for(i in 1:length(cvars)) {
+    v <- cvars[i]
+    sppname <- fullkey$long[match(v,fullkey$short)]
+    mean_ints <- coeffs.long %>% 
+      group_by(period,effect) %>% 
+      summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
+      mutate(lowerint=meanint-sdint,upperint=meanint+sdint)
+    
+    mean_ints_plot <- ggplot(mean_ints,aes(x=period,y=meanint))+
+      geom_hline(yintercept=0,linetype=2)+
+      geom_line()+
+      geom_pointrange(aes(ymin=lowerint,ymax=upperint),size=0.3)+
+      xlab("Period")+ylab("Interaction Strength")+
+      facet_wrap(~effect)
+  }
+  return(list(mean_ints=mean_ints,mean_ints_plot=mean_ints_plot))
+}
+
+navfac.mean_ints <- lapply(navfac.multi.mods, function(x) {calc_mean_ints(x$coeffs.long)})
+dutch.mean_ints <- lapply(dutch.multi.mods, function(x) {calc_mean_ints(x$coeffs.long)})
+daytona.mean_ints <- lapply(daytona.multi.mods, function(x) {calc_mean_ints(x$coeffs.long)})
+westend.mean_ints <- lapply(westend.multi.mods, function(x) {calc_mean_ints(x$coeffs.long)})
+
+## One version of the story
+par(mfrow=c(1,1))
+plot(westend$period,westend$lam)
+points(westend$period,westend$mac,pch=19,col="green")
+points(westend$period,westend$pter,pch=2,col="blue")
+points(westend$period,westend$npgo.mean,pch=4,col="red")
+points(westend$period,westend$red,pch=8,col="orange")
+points(westend$period,westend$purp,pch=8,col="purple")
+abline(v=16,col="black")
+```

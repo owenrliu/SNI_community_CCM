@@ -814,7 +814,26 @@ par(mfrow=c(1,1))
 
 
 ```{r extra code}
+## Mean densities over time
+mean.dens <- multiblock %>%
+  select(period,one_of(species),npgo.mean,waves.max) %>%
+  gather("species","dens",-period) %>%
+  group_by(species,period) %>%
+  summarise(meandens=mean(dens,na.rm=T),sddens=sd(dens,na.rm=T),lower=meandens-sddens,upper=meandens+sddens)
+
+mean.dens.plot <- function(spps=c(species,"npgo.mean")) {
+  dat <- filter(mean.dens,species %in% spps)
+  plt <- ggplot(dat,aes(x=period,y=meandens,ymin=lower,ymax=upper,col=species)) +
+  geom_pointrange()+
+  geom_line()+
+  xlab("Period")+
+  ylab("Standardized Density")+
+  geom_hline(yintercept=0,linetype=3)
+  plt
+}
+
 # Mean interactions over time (across spatial replicates)
+
 mean_ints <- list()
 mean_ints_plot <- list()
 for(i in 1:length(species)) {
@@ -823,30 +842,26 @@ for(i in 1:length(species)) {
   mean_ints[[spp]] <- coeffs.long[[spp]] %>% 
     group_by(period,effect) %>% 
     summarise(meanint=mean(value,na.rm=T),sdint=sd(value,na.rm=T))%>%
-    mutate(lower=meanint-sdint,upper=meanint+sdint)
+    mutate(lowerint=meanint-sdint,upperint=meanint+sdint)
+  
   mean_ints_plot[[spp]] <- ggplot(mean_ints[[spp]],aes(x=period,y=meanint))+
     geom_hline(yintercept=0,linetype=2)+
     geom_line()+
-    geom_pointrange(aes(ymin=lower,ymax=upper),size=0.3)+
+    geom_pointrange(aes(ymin=lowerint,ymax=upperint),size=0.3)+
     xlab("Period")+ylab("Interaction Strength")+
     facet_wrap(~effect)+
     ggtitle(paste("Interactive Effects on Dynamics of ",sppname, ", West End"))
 }
 
-## Mean densities over time
-mean.dens <- multiblock %>%
-  select(period,one_of(species),npgo.mean) %>%
-  gather("species","dens",-period) %>%
-  group_by(species,period) %>%
-  summarise(meandens=mean(dens,na.rm=T),sddens=sd(dens,na.rm=T),lower=meandens-sddens,upper=meandens+sddens)
+## One version of the story
+plot(multiblock$period,multiblock$lam)
+points(multiblock$period,multiblock$mac,pch=19,col="green")
+points(multiblock$period,multiblock$pter,pch=2,col="blue")
+points(multiblock$period,multiblock$npgo.mean,pch=4,col="red")
+points(multiblock$period,multiblock$red,pch=8,col="orange")
+points(multiblock$period,multiblock$purp,pch=8,col="purple")
+abline(v=16,col="black")
 
-mean.dens.plot <- ggplot(mean.dens,aes(x=period,y=meandens,ymin=lower,ymax=upper,col=species)) +
-  geom_pointrange()+
-  geom_line()+
-  xlab("Period")+
-  ylab("Standardized Density")+
-  geom_hline(yintercept=0,linetype=3)
-mean.dens.plot
 
 ## Effect of purple urchin on red urchin and otters
 test <- mean_ints$red %>% filter(effect=="purp")
