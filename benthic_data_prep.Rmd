@@ -146,5 +146,5 @@ study_spp <- c("pat","red","purp","wavy","paras","pis","cys","lam","eis","pter",
 
 dat.norm <- filter_normalize_data(fulldat,study_spp)
 
-write.csv(dat.norm,file=paste0(W_D,"/data/benth_data_trim_normalized",Sys.Date(),".csv"),row.names = F)
+#write.csv(dat.norm,file=paste0(W_D,"/data/benth_data_trim_normalized",Sys.Date(),".csv"),row.names = F)
 ```

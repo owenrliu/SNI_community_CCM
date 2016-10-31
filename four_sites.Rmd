@@ -22,7 +22,6 @@ library(knitr)
 W_D <- getwd()
 dat.long <- read.csv(paste0(W_D,"/data/benth_data_trim_normalized2016-09-09.csv"))
 
-# our particular species of interest
 study_spp <- c("red","purp","lam","pter","mac","ymac")
 ```
 
@@ -54,6 +53,7 @@ spp.key.bdens$plotting <- sapply(spp.key.bdens$long,abbr.species.names)
 
 # identify kelp juveniles as a separate variable
 spp.key.bdens$plotting[spp.key.bdens$long=="Macrocystis pyrifera <1m"] <- "Mac.pyr(j)"
+
 ```
 
 Next we produce a block (wide-form) dataset, where each column represents a species' time series.
@@ -65,7 +65,6 @@ benthdat.block <- dat.long %>%
   select(-dens) %>%
   spread(key=spp,value=norm) %>%
   arrange(site)
-#*************************************
 ```
 
 Import physical variables
@@ -220,8 +219,7 @@ par(mfrow=c(3,2))
 for(i in 1:length(study_spp)) {
   spp <- study_spp[i]
   dat <- dutch %>% select(matches(spp)) %>% as.data.frame()
-  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(dutch.segs),E=2:15,silent=T)
-  dutch.simp.list[[spp]] <- out
+  out <- simplex(as.numeric(dat[,1]),lib=as.matrix(navfac.segs),E=2:15,silent=T)
   
   # Plot embedding dimension vs. predictive ability (rho)
   plot(out$E,out$rho,type="l",main=fullkey$long[match(spp,fullkey$short)],xlab="Embedding Dimension (E)",ylab=expression(paste("Skill, ",rho)))
@@ -1167,8 +1165,7 @@ abline(v=16,col="black")
 For tp=2
 
 ```{r general smap model fxn}
-
-smap_select <- function(sitedat,sitesegs,species,causalvars,select=TRUE) {
+smap_select2 <- function(sitedat,sitesegs,species,causalvars,select=TRUE) {
 
   nsteps <- length(causalvars)
   
@@ -1277,25 +1274,25 @@ smap_select <- function(sitedat,sitesegs,species,causalvars,select=TRUE) {
 
 # Nav Fac
 navfac.multi.mods.tp2 <- lapply(c("mac","purp","lam","ymac"),function(x) {
-  smap_select(navfac,navfac.segs,x,navfac.causal.vars[[x]],select=F)
+  smap_select2(navfac,navfac.segs,x,navfac.causal.vars[[x]],select=F)
 })
 names(navfac.multi.mods.tp2) <- c("mac","purp","lam","ymac")
 
 # Dutch
 dutch.multi.mods.tp2 <- lapply(c("mac","purp","pter","ymac"),function(x) {
-  smap_select(dutch,dutch.segs,x,dutch.causal.vars[[x]],select=F)
+  smap_select2(dutch,dutch.segs,x,dutch.causal.vars[[x]],select=F)
 })
 names(dutch.multi.mods.tp2) <- c("mac","purp","pter","ymac")
 
 # Daytona
 daytona.multi.mods.tp2 <- lapply(c("mac","purp","lam","red"),function(x) {
-  smap_select(daytona,daytona.segs,x,daytona.causal.vars[[x]],select=F)
+  smap_select2(daytona,daytona.segs,x,daytona.causal.vars[[x]],select=F)
 })
 names(daytona.multi.mods.tp2) <- c("mac","purp","lam","red")
 
 # West End
 westend.multi.mods.tp2 <- lapply(c("mac","purp","lam","ymac","red","pter"),function(x) {
-  smap_select(westend,westend.segs,x,westend.causal.vars[[x]],select=F)
+  smap_select2(westend,westend.segs,x,westend.causal.vars[[x]],select=F)
 })
 names(westend.multi.mods.tp2) <- c("mac","purp","lam","ymac","red","pter")
 
