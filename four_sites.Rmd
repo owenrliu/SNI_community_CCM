@@ -977,7 +977,7 @@ names(westend.multi.mods) <- c("mac","purp","lam","ymac","red","pter")
 West End has shown switches between barrens and non-barrens. Let's look at difference. From observing the data, we see that 
 
 ```{r barrens nonbarrens}
-plot(westend$red,westend$mac,xlab="Red Urchin Density (normalized)",ylab="Macrocystis adult density (normalized)")
+plot(westend$red,westend$mac,pch=18,xlab="Red Urchin Density (normalized)",ylab="Macrocystis adult density (normalized)")
 abline(v=-0.5,col="red",lty=2)
 
 # We use this as our cutoff and assign a state to each dataset
@@ -1423,5 +1423,119 @@ navfac.season.plots <- calc_season_ints(navfac,navfac.multi.mods)
 dutch.season.plots <- calc_season_ints(dutch,dutch.multi.mods)
 daytona.season.plots <- calc_season_ints(daytona,daytona.multi.mods)
 westend.season.plots <- calc_season_ints(westend,westend.multi.mods)
+
+```
+
+Dutch vs. West End
+
+```{r dutch v west end}
+dutch.means <- dutch %>% group_by(period) %>% summarise_each(funs(m=mean(.,na.rm=T),sd=sd(.,na.rm=T)),one_of(lib.vars))
+westend.means <- westend %>% group_by(period) %>% summarise_each(funs(m=mean(.,na.rm=T),sd=sd(.,na.rm=T)),one_of(lib.vars))
+ggplot(dutch.means,aes(x=period,y=mac_m)) +
+  geom_line(size=1.5,col="darkgreen")+
+  geom_pointrange(aes(ymin=mac_m-mac_sd,ymax=mac_m+mac_sd),col="darkgreen")+
+  geom_line(aes(y=purp_m),size=1.5,col="mediumpurple4")+
+  geom_pointrange(aes(y=purp_m,ymin=purp_m-purp_sd,ymax=purp_m+purp_sd),col="mediumpurple4")+
+  scale_x_discrete(breaks=NULL)+
+  theme_minimal()+
+  xlab("time")+ylab("Normalized Density")
+
+ggplot(westend.means,aes(x=period,y=mac_m)) +
+  geom_line(size=1.5,col="darkgreen")+
+  geom_pointrange(aes(ymin=mac_m-mac_sd,ymax=mac_m+mac_sd),col="darkgreen")+
+  
+  geom_line(aes(y=purp_m),size=1.5,col="mediumpurple4")+
+  geom_pointrange(aes(y=purp_m,ymin=purp_m-purp_sd,ymax=purp_m+purp_sd),col="mediumpurple4")+
+  scale_x_discrete(breaks=NULL)+
+  theme_minimal()+
+  xlab("time")+ylab("Normalized Density")
+```
+
+Why and when does Purp sometimes have a positive effect on Mac at Dutch?
+
+```{r purp mac dutch}
+
+# modifiers of purp effect on mac
+cor(dutch.multi.mods$mac$coeffs$purp,dutch[,3:13],use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$mac,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$lam,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$purp,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$purp)
+
+# modifiers of purp effect on pter
+cor(dutch.multi.mods$pter$coeffs$purp,dutch[,3:13],use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$purp,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$mac,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$pter$coeffs$purp)
+
+# modifiers of mac effect on pter
+cor(dutch.multi.mods$pter$coeffs$mac,dutch[,3:13],use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$lam,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$mac,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$ymac,dutch.multi.mods$pter$coeffs$mac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$mac)
+
+# modifiers of pter effect on mac
+cor(dutch.multi.mods$mac$coeffs$pter,dutch[,3:13],use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$mac$coeffs$pter)
+quant_reg_plot(dutch$pter,dutch.multi.mods$mac$coeffs$pter)
+quant_reg_plot(dutch$lam,dutch.multi.mods$mac$coeffs$pter)
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$mac$coeffs$pter)
+
+# modifiers of purp effect on ymac
+cor(dutch.multi.mods$ymac$coeffs$purp,dutch[,3:13],use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$ymac$coeffs$purp)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs$purp)
+quant_reg_plot(dutch$mei.mean,dutch.multi.mods$ymac$coeffs$pter)
+quant_reg_plot(dutch$pdo.mean,dutch.multi.mods$ymac$coeffs$purp)
+```
+
+NPGO and Competitive Dominance
+
+```{r npgo and dominance}
+#NPGO and mac recruitment (ymac)
+cor(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs,use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs$ymac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs$mac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$ymac$coeffs$waves.max)
+
+cor(westend$npgo.mean,westend.multi.mods$ymac$coeffs[,1:11],use="complete.obs")
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$ymac$coeffs$ymac)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$ymac$coeffs$purp)
+
+#NPGO and mac
+cor(dutch$npgo.mean,dutch.multi.mods$mac$coeffs,use="complete.obs")
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$mac$coeffs$ymac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$mac$coeffs$pter)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$mac$coeffs$mac)
+
+cor(westend$npgo.mean,westend.multi.mods$mac$coeffs[,1:11],use="complete.obs")
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$pter)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$purp)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$waves.max)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$mac$coeffs$ymac)
+
+#NPGO and pter
+cor(dutch$npgo.mean,dutch.multi.mods$pter$coeffs,use="complete.obs")
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$lam)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$ymac)
+quant_reg_plot(dutch$npgo.mean,dutch.multi.mods$pter$coeffs$mac)
+
+cor(westend$npgo.mean,westend.multi.mods$pter$coeffs[,1:9],use="complete.obs")
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$mac)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$pter$coeffs$ymac)
+
+#NPGO and lam
+cor(westend$npgo.mean,westend.multi.mods$lam$coeffs[,1:8],use="complete.obs")
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$red)
+quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$purp)
 
 ```

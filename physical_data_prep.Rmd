@@ -132,12 +132,23 @@ npgo.per <- npgo %>%
   group_by(period) %>%
   summarise(npgo.mean=mean(NPGO.index))
 
+npgo.yr <- npgo %>% filter(YEAR>1979) %>% unite(date,MONTH,YEAR,sep=" ")
+
+npgo.yr$date <- as.yearmon(npgo.yr$date,format="%m %Y") %>% as.Date()
+
+ggplot(npgo.yr,aes(x=date,y=NPGO.index)) +
+  geom_line(col="darkgreen",size=1.5)+
+  scale_x_date()+
+  xlab("Year")+
+  ylab("NPGO Index")+
+  geom_hline(yintercept=0,linetype=2)+
+  theme_minimal()
+
 ## Plot of output
 ggplot(npgo.per,aes(x=period,y=npgo.mean)) +
-  geom_line()+
+  geom_line(col="darkgreen",size=2)+
   xlab("Period")+
   ylab("NPGO Index")+
-  ggtitle("NPGO over SNI monitoring periods")+
   geom_hline(yintercept=0,linetype=2)
 ```
 
@@ -164,7 +175,7 @@ waves.per <- waves %>%
 ggplot(waves.per,aes(x=period,y=waves.max)) +
   geom_line()+
   xlab("Period")+
-  ylab("Maximum Signficant Wave Height")+
+  ylab("Maximum Significant Wave Height")+
   ggtitle("Max Wave Height over SNI monitoring periods")
 
 # SST
@@ -178,6 +189,17 @@ sst.per <- sst %>%
   # group by period, and MAX
   group_by(period) %>%
   summarise(sst.mean=mean(Mean_SST))
+
+waves.yr <- waves %>% filter(Year>1979) %>% unite(date,Month,Year,sep=" ")
+
+waves.yr$date <- as.yearmon(waves.yr$date,format="%m %Y") %>% as.Date()
+
+ggplot(waves.yr,aes(x=date,y=Mean_Hs)) +
+  geom_line(col="blue",size=1)+
+  scale_x_date()+
+  xlab("Year")+
+  ylab("Mean Wave Height")+
+  theme_minimal()
 ```
 
 ### Data join and export
