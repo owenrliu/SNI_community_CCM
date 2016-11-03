@@ -1539,3 +1539,44 @@ quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$red)
 quant_reg_plot(westend$npgo.mean,westend.multi.mods$lam$coeffs$purp)
 
 ```
+
+Waves and stuff
+
+```{r wave effects}
+cor(dutch$waves.max,dutch.multi.mods$ymac$coeffs,use="complete.obs")
+par(mfrow=c(2,2),mar=c(2,2,2,2)+0.1)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$ymac$coeffs$ymac)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$ymac$coeffs$npgo.mean)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$ymac$coeffs$pter)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$ymac$coeffs$waves.max)
+
+cor(westend$waves.max,westend.multi.mods$ymac$coeffs[,1:11],use="complete.obs")
+quant_reg_plot(westend$waves.max,westend.multi.mods$ymac$coeffs$ymac)
+quant_reg_plot(westend$waves.max,westend.multi.mods$ymac$coeffs$pter)
+
+#Waves and mac
+cor(dutch$waves.max,dutch.multi.mods$mac$coeffs,use="complete.obs")
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$purp)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$ymac)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$npgo.mean)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$waves.max)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$mac$coeffs$mac)
+
+cor(westend$waves.max,westend.multi.mods$mac$coeffs[,1:11],use="complete.obs")
+quant_reg_plot(westend$waves.max,westend.multi.mods$mac$coeffs$purp)
+quant_reg_plot(westend$waves.max,westend.multi.mods$mac$coeffs$waves.max)
+
+#Waves and pter
+cor(dutch$waves.max,dutch.multi.mods$pter$coeffs,use="complete.obs")
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$pter$coeffs$purp)
+quant_reg_plot(dutch$waves.max,dutch.multi.mods$pter$coeffs$lam)
+
+cor(westend$waves.max,westend.multi.mods$pter$coeffs[,1:9],use="complete.obs")
+quant_reg_plot(westend$waves.max,westend.multi.mods$pter$coeffs$purp)
+quant_reg_plot(westend$waves.max,westend.multi.mods$pter$coeffs$npgo.mean)
+
+#Waves and lam
+cor(westend$waves.max,westend.multi.mods$lam$coeffs[,1:8],use="complete.obs")
+quant_reg_plot(westend$waves.max,westend.multi.mods$lam$coeffs$purp)
+quant_reg_plot(westend$waves.max,westend.multi.mods$lam$coeffs$pter)
+```
